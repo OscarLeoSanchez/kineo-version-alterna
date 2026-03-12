@@ -1,0 +1,113 @@
+
+# Kineo Coach: Documento Maestro de Definición de Producto
+
+**Versión:** 2.0
+**Fecha:** Diciembre 2025
+
+
+
+## PARTE 1: Visión de Negocio y Producto
+
+### 1\. Concepto Central
+
+**Kineo Coach** (del griego *kinesis*, movimiento) es un **Sistema de Bio-Feedback Inteligente** de bolsillo. No es solo una app para registrar ejercicios; es un entrenador y nutricionista virtual que utiliza Inteligencia Artificial avanzada para crear planes hiper-personalizados que se adaptan en tiempo real a la vida del usuario.
+
+### 2\. Propuesta de Valor Única (PVU)
+
+**"Hiper-Personalización Dinámica"**.
+A diferencia de las apps tradicionales que te dan un PDF estático por 4 semanas, Kineo entiende que la vida cambia. Si el usuario duerme mal, tiene poco tiempo, o no tiene equipo disponible un día específico, Kineo reestructura la rutina y la dieta instantáneamente para ese día.
+
+### 3\. Funcionalidades Clave (El Producto)
+
+  * **Onboarding Inteligente (La Anamnesis Digital):**
+      * Un proceso de bienvenida conversacional y fluido.
+      * Recopila: Datos fisiológicos (medidas, peso), Estilo de vida (tiempo disponible, estrés), Nutrición (alergias, gustos) y Contexto (equipo disponible).
+  * **El Motor Kineo (The Brain):**
+      * Generación automática de rutinas de entrenamiento (fuerza, cardio, movilidad) y planes de alimentación completos basados en los objetivos del usuario.
+  * **Dashboard "Vivo":**
+      * Una pantalla principal que cambia según la hora del día.
+      * **Mañana:** Desayuno sugerido + Motivación + Resumen del sueño (si hay wearables).
+      * **Tarde:** Entrenamiento pendiente + Recordatorios de hidratación.
+      * **Noche:** Resumen del día + Preparación para el descanso.
+  * **Modo Entrenamiento (Workout Mode):**
+      * Guía paso a paso con animaciones de alta calidad.
+      * Cronómetros inteligentes y registro de cargas (peso/reps).
+      * **Botón "SOS":** "¿Te duele algo?" o "¿Máquina ocupada?". La IA reemplaza el ejercicio al instante por una alternativa biomecánica equivalente.
+  * **Nutrición Integrada:**
+      * Menús flexibles (si no te gusta el almuerzo sugerido, cámbialo por una opción equivalente en macros).
+      * Generación de lista de compras automática.
+
+### 4\. Modelo de Monetización
+
+  * **Freemium:** Acceso a registros básicos y biblioteca de ejercicios.
+  * **Suscripción Pro:** Acceso al Motor de IA, personalización ilimitada, ajustes diarios y chat con el Coach.
+
+
+## PARTE 2: Arquitectura y Especificaciones Técnicas
+
+### 1\. Filosofía de Ingeniería
+
+Construiremos una plataforma **Robusta, Escalable y Portátil**. Priorizamos la experiencia de usuario visual (UX/UI) y evitamos depender de un solo proveedor de nube (Vendor Lock-in).
+
+### 2\. Stack Tecnológico (La Caja de Herramientas)
+
+#### **A. Frontend (Aplicación Móvil)**
+
+  * **Tecnología:** **Flutter** (Lenguaje Dart).
+  * **Justificación:** Permite un rendimiento nativo superior, animaciones complejas fluidas y un control total sobre cada píxel de la pantalla. Es ideal para la experiencia "Premium" que buscamos.
+  * **Gestión de Estado:** **Bloc (Business Logic Component)**. Para separar estrictamente la lógica de la interfaz.
+
+#### **B. Backend (Cerebro y API)**
+
+  * **Tecnología:** **Python** con **FastAPI**.
+  * **Justificación:** Python es el lenguaje nativo de la IA. FastAPI es moderno, asíncrono y ultra-rápido.
+  * **Inteligencia Artificial:** Integración vía API con LLMs avanzados (Gemini / OpenAI) orquestados desde el backend.
+
+#### **C. Base de Datos (Persistencia)**
+
+  * **Motor:** **PostgreSQL**. La base de datos relacional más robusta del mundo open-source.
+  * **Hosting Inicial:** **Supabase**. (Nos da la base de datos lista para usar).
+  * **Estrategia de Portabilidad:** Utilizaremos un **ORM (SQLModel/SQLAlchemy)** en Python.
+      * *Beneficio:* El código de la app no sabrá que usa Supabase. Si mañana queremos migrar a AWS, Azure o un servidor propio, solo cambiamos una línea de configuración (la URL de conexión). **Cero Vendor Lock-in.**
+
+#### **D. Autenticación (Seguridad)**
+
+  * **Proveedor:** **Firebase Authentication** (Google Identity Platform).
+  * **Estrategia:** Desacoplada de la base de datos.
+      * Firebase maneja el login (Google, Apple, Email) y la seguridad de las credenciales.
+      * Nuestro backend solo verifica el token que entrega Firebase.
+      * *Beneficio:* Es el estándar de oro en seguridad móvil, gratuito a gran escala y permite exportar los usuarios si decidimos cambiar.
+
+### 3\. Arquitectura de Software
+
+Implementaremos **Clean Architecture** (Arquitectura Limpia) organizada por **Features** (Funcionalidades).
+
+**Estructura del Proyecto (Flutter):**
+
+```text
+/lib
+  /core            # Configuración global (Temas, Constantes, Inyección de Dependencias)
+  /features        # Módulos del negocio
+    /auth          # Login con Firebase
+    /onboarding    # Recolección de datos
+    /dashboard     # Pantalla principal
+    /workout       # Lógica de entrenamiento
+      /data        # Repositorios (Llamadas a la API Python)
+      /domain      # Modelos y Lógica pura
+      /presentation # Pantallas y BLOCs
+```
+
+
+### Hoja de Ruta Inicial (Sprint 0 & 1)
+
+1.  **Configuración del Entorno:**
+      * Crear proyecto en **Firebase** (Auth).
+      * Crear proyecto en **Supabase** (DB).
+      * Inicializar repositorio **Flutter**.
+      * Inicializar repositorio **FastAPI**.
+2.  **Infraestructura Base:**
+      * Conectar Flutter con Firebase Auth.
+      * Conectar FastAPI con Supabase (vía SQLModel).
+3.  **Primer Entregable:**
+      * Pantalla de Login funcional y estructura de navegación base.
+

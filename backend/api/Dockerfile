@@ -1,0 +1,17 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+COPY app ./app
+COPY tests ./tests
+COPY pyproject.toml README.md ./
+COPY .env.example ./.env.example
+
+RUN pip install --upgrade pip && pip install -e .[dev]
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

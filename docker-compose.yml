@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: kineo-postgres
+    environment:
+      POSTGRES_DB: kineo
+      POSTGRES_USER: kineo
+      POSTGRES_PASSWORD: kineo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kineo -d kineo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend/api
+    container_name: kineo-api
+    env_file:
+      - ./backend/api/.env.docker
+    environment:
+      APP_NAME: Kineo Coach API
+      APP_ENV: docker
+      DEBUG: "true"
+      API_PREFIX: /api/v1
+      DATABASE_URL: postgresql+psycopg://kineo:kineo@db:5432/kineo
+      JWT_SECRET: docker-dev-secret-key-with-32-plus-chars
+    ports:
+      - "8010:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/api/app:/app/app
+      - ./backend/api/tests:/app/tests
+
+volumes:
+  postgres_data:
