@@ -189,17 +189,19 @@ class ExperienceService:
         plan: InitialPlanRead,
         context: PersonalizationContext,
     ) -> NutritionSummaryRead:
+        user_id = profile.user_id or 0
         priority = self._priority_focus(context.daily_priority)
         depth = self._depth_level(context.recommendation_depth)
         proactive_adjustments = context.proactive_adjustments is not False
         program = PlanService.parse_generated_program(plan)
-        calorie_target = program.calorie_target if program is not None else (
+        calorie_target_raw = program.calorie_target if program is not None else (
             "1900 kcal" if "grasa" in profile.goal.lower() else "2400 kcal"
         )
-        adherence_score = self.activity_repository.nutrition_average(user_id=profile.user_id or 0)
+        calorie_target = self._parse_number(calorie_target_raw, fallback=2000)
+        adherence_score = self.activity_repository.nutrition_average(user_id=user_id)
         week_start_date = self._plan_anchor_date(plan)
         weekly_calendar = self.activity_repository.weekly_workout_calendar(
-            user_id=profile.user_id or 0,
+            user_id=user_id,
             target_per_week=profile.workout_days_per_week,
             start_date=week_start_date,
         )
@@ -271,9 +273,36 @@ class ExperienceService:
             )
             swap_tip = f"{swap_tip} Incluye timing flexible y reemplazos guiados por tu contexto."
 
+        today_day = next(
+            (item for item in weekly_days if item.get("is_today") is True),
+            weekly_days[selected_day_index] if weekly_days else None,
+        )
+        nutrition_metrics = self._summarize_nutrition_day(
+            user_id=user_id,
+            iso_date=today_day.get("iso_date", "") if today_day is not None else "",
+            meals=(
+                [
+                    dict(item)
+                    for item in today_day.get("meals", [])
+                ]
+                if today_day is not None
+                else []
+            ),
+            calorie_target=calorie_target,
+        )
+
         return NutritionSummaryRead(
             title="Marco nutricional del dia",
             calorie_target=calorie_target,
+            calories_consumed_today=nutrition_metrics["calories_consumed_today"],
+            protein_target_g=nutrition_metrics["protein_target_g"],
+            protein_consumed_g=nutrition_metrics["protein_consumed_g"],
+            carbs_target_g=nutrition_metrics["carbs_target_g"],
+            carbs_consumed_g=nutrition_metrics["carbs_consumed_g"],
+            fat_target_g=nutrition_metrics["fat_target_g"],
+            fat_consumed_g=nutrition_metrics["fat_consumed_g"],
+            water_target_l=nutrition_metrics["water_target_l"],
+            water_consumed_l=nutrition_metrics["water_consumed_l"],
             macro_focus=macro_focus,
             meals=meals,
             swap_tip=swap_tip,
@@ -635,6 +664,93 @@ class ExperienceService:
         if 0 <= (today - created.date()).days <= 1 and created >= datetime.now(UTC) - timedelta(hours=36):
             return today
         return created.date()
+
+    @staticmethod
+    def _parse_number(value: object, fallback: float = 0) -> float:
+        if value is None:
+            return fallback
+        if isinstance(value, (int, float)):
+            return float(value)
+        cleaned = "".join(ch for ch in str(value) if ch.isdigit() or ch in {".", ","}).replace(",", ".")
+        return float(cleaned) if cleaned else fallback
+
+    @staticmethod
+    def _parse_macro_string(value: object) -> tuple[float, float, float]:
+        if value is None:
+            return 0.0, 0.0, 0.0
+        text = str(value).upper()
+        protein = carbs = fat = 0.0
+        for chunk in text.replace(" ", "").split("/"):
+            if chunk.endswith("P"):
+                protein = ExperienceService._parse_number(chunk[:-1], fallback=0)
+            elif chunk.endswith("C"):
+                carbs = ExperienceService._parse_number(chunk[:-1], fallback=0)
+            elif chunk.endswith("G"):
+                fat = ExperienceService._parse_number(chunk[:-1], fallback=0)
+        return protein, carbs, fat
+
+    @staticmethod
+    def _normalize_meal_label(value: object) -> str:
+        return str(value or "").strip().lower()
+
+    def _summarize_nutrition_day(
+        self,
+        *,
+        user_id: int,
+        iso_date: str,
+        meals: list[dict[str, object]],
+        calorie_target: float,
+    ) -> dict[str, float]:
+        logs = (
+            self.activity_repository.nutrition_logs_for_day(user_id=user_id, day_iso_date=iso_date)
+            if iso_date
+            else []
+        )
+        meal_by_label = {
+            self._normalize_meal_label(meal.get("title")): meal
+            for meal in meals
+        }
+        protein_target = carbs_target = fat_target = 0.0
+        for meal in meals:
+            protein_value = self._parse_number(meal.get("protein_g"), fallback=0)
+            carbs_value = self._parse_number(meal.get("carbs_g"), fallback=0)
+            fat_value = self._parse_number(meal.get("fat_g"), fallback=0)
+            if protein_value == 0 and carbs_value == 0 and fat_value == 0:
+                protein_value, carbs_value, fat_value = self._parse_macro_string(meal.get("macros"))
+            protein_target += protein_value
+            carbs_target += carbs_value
+            fat_target += fat_value
+
+        calories_consumed = protein_consumed = carbs_consumed = fat_consumed = 0.0
+        water_consumed = 0.0
+        for log in logs:
+            matched_meal = meal_by_label.get(self._normalize_meal_label(log.meal_label))
+            if matched_meal is not None:
+                calories_consumed += self._parse_number(matched_meal.get("calories_kcal"), fallback=0)
+                planned_protein = self._parse_number(matched_meal.get("protein_g"), fallback=0)
+                planned_carbs = self._parse_number(matched_meal.get("carbs_g"), fallback=0)
+                planned_fat = self._parse_number(matched_meal.get("fat_g"), fallback=0)
+                if planned_protein == 0 and planned_carbs == 0 and planned_fat == 0:
+                    planned_protein, planned_carbs, planned_fat = self._parse_macro_string(matched_meal.get("macros"))
+                protein_consumed += float(log.protein_grams or planned_protein)
+                carbs_consumed += planned_carbs
+                fat_consumed += planned_fat
+            else:
+                protein_consumed += float(log.protein_grams or 0)
+            water_consumed += float(log.hydration_liters or 0)
+
+        return {
+            "calories_consumed_today": calories_consumed,
+            "protein_target_g": protein_target,
+            "protein_consumed_g": protein_consumed,
+            "carbs_target_g": carbs_target,
+            "carbs_consumed_g": carbs_consumed,
+            "fat_target_g": fat_target,
+            "fat_consumed_g": fat_consumed,
+            "water_target_l": 2.5,
+            "water_consumed_l": water_consumed,
+            "calorie_target": calorie_target,
+        }
 
     @staticmethod
     def _catalog_entry(catalog: dict[str, object], name: str) -> dict[str, object]:

@@ -7,9 +7,17 @@ class NutritionDetailSheet extends StatelessWidget {
   /// New keys: calories_kcal, protein_g, carbs_g, fat_g, fiber_g,
   ///   cooking_time_minutes, ingredients_with_quantities (List),
   ///   preparation_steps (List), allergens (List), best_for
+  /// T-14: optional calorie_target and protein_target_g for macro vs. target display
   final Map<String, dynamic> meal;
+  final double? calorieTarget;
+  final double? proteinTargetG;
 
-  const NutritionDetailSheet({super.key, required this.meal});
+  const NutritionDetailSheet({
+    super.key,
+    required this.meal,
+    this.calorieTarget,
+    this.proteinTargetG,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -85,18 +93,150 @@ class NutritionDetailSheet extends StatelessWidget {
                       const SizedBox(height: 10),
                     ],
 
-                    // Badges row (cooking time + best_for)
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        if (cookingTime != null) _BadgeChip(label: '⏱ $cookingTime min'),
-                        if (bestFor != null && bestFor.isNotEmpty)
-                          _BadgeChip(label: '🎯 $bestFor'),
-                      ],
-                    ),
-                    if (cookingTime != null || (bestFor != null && bestFor.isNotEmpty))
-                      const SizedBox(height: 16),
+                    // Badges row (cooking time)
+                    if (cookingTime != null) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _BadgeChip(label: '⏱ $cookingTime min'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // T-08 — best_for: "Ideal para:" chip + ExpansionTile
+                    if (bestFor != null && bestFor.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCF0E4),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('✨ '),
+                                Text(
+                                  'Ideal para: ',
+                                  style: TextStyle(
+                                    color: Colors.green.shade800,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    bestFor,
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontSize: 13,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: const EdgeInsets.only(bottom: 12),
+                          leading: Icon(
+                            Icons.lightbulb_outline,
+                            color: Colors.green.shade700,
+                            size: 20,
+                          ),
+                          title: Text(
+                            '¿Por qué esta comida?',
+                            style: TextStyle(
+                              color: Colors.green.shade800,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          initiallyExpanded: false,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE7F4EE),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    bestFor,
+                                    style: const TextStyle(height: 1.5),
+                                  ),
+                                  // T-14 — Macros vs. target
+                                  if (calorieTarget != null && calorieTarget! > 0) ...[
+                                    const SizedBox(height: 10),
+                                    const Divider(height: 1, color: Color(0xFFB8DCC8)),
+                                    const SizedBox(height: 10),
+                                    if (proteinG != null) ...[
+                                      _MacroVsTargetRow(
+                                        label: 'Proteína',
+                                        consumed: _toDouble(proteinG),
+                                        target: proteinTargetG,
+                                        unit: 'g',
+                                      ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    if (caloriesKcal != null) ...[
+                                      _MacroVsTargetRow(
+                                        label: 'Calorías',
+                                        consumed: _toDouble(caloriesKcal),
+                                        target: calorieTarget,
+                                        unit: 'kcal',
+                                      ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                  ],
+                                  // T-14 — Meal slot context
+                                  if ((meal['title']?.toString() ?? '').isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.schedule,
+                                          size: 14,
+                                          color: Colors.green,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            'Esta comida es ideal para ${meal['title']}',
+                                            style: TextStyle(
+                                              color: Colors.green.shade800,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
 
                     // Macros section (new format — emoji chips)
                     if (hasNewMacros) ...[
@@ -293,12 +433,21 @@ class NutritionDetailSheet extends StatelessWidget {
 }
 
 /// Convenience function to open the nutrition detail sheet
-void showNutritionDetailSheet(BuildContext context, Map<String, dynamic> meal) {
+void showNutritionDetailSheet(
+  BuildContext context,
+  Map<String, dynamic> meal, {
+  double? calorieTarget,
+  double? proteinTargetG,
+}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => NutritionDetailSheet(meal: meal),
+    builder: (_) => NutritionDetailSheet(
+      meal: meal,
+      calorieTarget: calorieTarget,
+      proteinTargetG: proteinTargetG,
+    ),
   );
 }
 
@@ -388,6 +537,49 @@ class _BadgeChip extends StatelessWidget {
         label,
         style: Theme.of(context).textTheme.bodySmall,
       ),
+    );
+  }
+}
+
+// ─── T-14: Macro vs. Target Row ────────────────────────────────────────────────
+
+double _toDouble(dynamic value) {
+  if (value == null) return 0;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0;
+}
+
+class _MacroVsTargetRow extends StatelessWidget {
+  final String label;
+  final double consumed;
+  final double? target;
+  final String unit;
+
+  const _MacroVsTargetRow({
+    required this.label,
+    required this.consumed,
+    required this.target,
+    required this.unit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final targetStr = target != null && target! > 0
+        ? '${consumed.round()}/${ target!.round()} $unit del objetivo'
+        : '${consumed.round()} $unit';
+    return Row(
+      children: [
+        const Icon(Icons.arrow_right, size: 16, color: Colors.black45),
+        const SizedBox(width: 4),
+        Text(
+          '$label: ',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+        ),
+        Text(
+          targetStr,
+          style: const TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+      ],
     );
   }
 }

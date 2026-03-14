@@ -151,8 +151,12 @@ class _NutritionPageState extends State<NutritionPage>
       const ActivityHistoryApiService().fetchHistory(),
       ProfilePreferencesStore().load(),
     ]);
-    final summary = Map<String, dynamic>.from(results[0] as Map<String, dynamic>);
-    final history = Map<String, dynamic>.from(results[1] as Map<String, dynamic>);
+    final summary = Map<String, dynamic>.from(
+      results[0] as Map<String, dynamic>,
+    );
+    final history = Map<String, dynamic>.from(
+      results[1] as Map<String, dynamic>,
+    );
     SessionDataCache.instance
       ..nutritionSummary = summary
       ..history = history;
@@ -178,7 +182,8 @@ class _NutritionPageState extends State<NutritionPage>
     final days = (_viewData?.summary['weekly_days'] as List<dynamic>? ?? []);
     if (days.isEmpty) return null;
     final baseIndex =
-        _selectedDayIndex ?? (_viewData?.summary['selected_day_index'] as int? ?? 0);
+        _selectedDayIndex ??
+        (_viewData?.summary['selected_day_index'] as int? ?? 0);
     final safeIndex = baseIndex.clamp(0, days.length - 1);
     return Map<String, dynamic>.from(days[safeIndex] as Map);
   }
@@ -188,26 +193,213 @@ class _NutritionPageState extends State<NutritionPage>
     return meals.map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
 
+  Map<String, dynamic>? get _mealForSelectedLabel {
+    final meals = _mealsForSelectedDay;
+    if (meals.isEmpty) return null;
+    for (final meal in meals) {
+      if (_normalizeMealLabel(meal['title']?.toString() ?? '') ==
+          _normalizeMealLabel(_mealLabel)) {
+        return meal;
+      }
+    }
+    return meals.first;
+  }
+
   List<Map<String, dynamic>> get _nutritionHistory {
-    final items = (_viewData?.history['nutrition_logs'] as List<dynamic>? ?? []);
+    final items =
+        (_viewData?.history['nutrition_logs'] as List<dynamic>? ?? []);
     return items.map((item) => Map<String, dynamic>.from(item as Map)).toList();
   }
 
   List<Map<String, dynamic>> _logsForDay(String isoDate) {
     return _nutritionHistory.where((entry) {
-      final loggedDate = (entry['logged_at']?.toString() ?? '').split('T').first.trim();
+      final loggedDate = (entry['logged_at']?.toString() ?? '')
+          .split('T')
+          .first
+          .trim();
       return loggedDate == isoDate;
     }).toList();
   }
 
-  Map<String, dynamic>? _matchLogForMeal(String isoDate, Map<String, dynamic> meal) {
+  Map<String, dynamic>? _matchLogForMeal(
+    String isoDate,
+    Map<String, dynamic> meal,
+  ) {
     final targetTitle = _normalizeMealLabel(meal['title']?.toString() ?? '');
     for (final entry in _logsForDay(isoDate)) {
-      if (_normalizeMealLabel(entry['meal_label']?.toString() ?? '') == targetTitle) {
+      if (_normalizeMealLabel(entry['meal_label']?.toString() ?? '') ==
+          targetTitle) {
         return entry;
       }
     }
     return null;
+  }
+
+  void _openOptionBankSheet(Map<String, dynamic> meal) {
+    final options = (meal['option_bank'] as List<dynamic>? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    final swapOptions = (meal['swap_options'] as List<dynamic>? ?? [])
+        .map((item) => item.toString())
+        .toList();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              color: Theme.of(context).colorScheme.surface,
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Opciones para ${meal['title'] ?? 'esta comida'}',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    meal['meal_name']?.toString() ??
+                        meal['meal']?.toString() ??
+                        '',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
+                  ),
+                  if (options.isEmpty && swapOptions.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: swapOptions
+                          .map(
+                            (item) => _SmallPill(
+                              label: item,
+                              color: _kBrandLight,
+                              textColor: _kBrand,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (options.isEmpty)
+                    const Text(
+                      'Aún no hay banco de opciones para esta comida.',
+                      style: TextStyle(color: Colors.black45),
+                    )
+                  else
+                    ...options.map((option) {
+                      final detailMeal = {
+                        'title': meal['title'],
+                        'meal_name': option['name'],
+                        ...option,
+                      };
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: PressableCard(
+                          borderRadius: 14,
+                          onTap: () =>
+                              showNutritionDetailSheet(context, detailMeal),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8F5EF),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFE7DFD2),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: _kBrandLight,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.restaurant_menu_rounded,
+                                    color: _kBrand,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        option['name']?.toString() ?? 'Opción',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      if ((option['summary']?.toString() ?? '')
+                                          .isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          option['summary'].toString(),
+                                          style: const TextStyle(
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ],
+                                      if ((option['macros']?.toString() ?? '')
+                                          .isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        _SmallPill(
+                                          label: option['macros'].toString(),
+                                          color: const Color(0xFFE7EFEA),
+                                          textColor: _kBrand,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.black38,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -257,9 +449,13 @@ class _NutritionPageState extends State<NutritionPage>
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
               child: Material(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
                   child: Column(
@@ -279,7 +475,10 @@ class _NutritionPageState extends State<NutritionPage>
                       const SizedBox(height: 14),
                       const Text(
                         'Registrar comida',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       _mealLabelChips(
@@ -289,7 +488,9 @@ class _NutritionPageState extends State<NutritionPage>
                       const SizedBox(height: 14),
                       TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Nombre de la comida'),
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre de la comida',
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -298,7 +499,9 @@ class _NutritionPageState extends State<NutritionPage>
                             child: TextField(
                               controller: kcalController,
                               keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(labelText: 'Calorías aprox.'),
+                              decoration: const InputDecoration(
+                                labelText: 'Calorías aprox.',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -306,7 +509,9 @@ class _NutritionPageState extends State<NutritionPage>
                             child: TextField(
                               controller: proteinController,
                               keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(labelText: 'Proteína (g)'),
+                              decoration: const InputDecoration(
+                                labelText: 'Proteína (g)',
+                              ),
                             ),
                           ),
                         ],
@@ -318,7 +523,9 @@ class _NutritionPageState extends State<NutritionPage>
                             child: TextField(
                               controller: hydrationController,
                               keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(labelText: 'Agua (L)'),
+                              decoration: const InputDecoration(
+                                labelText: 'Agua (L)',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -332,7 +539,8 @@ class _NutritionPageState extends State<NutritionPage>
                                   min: 40,
                                   max: 100,
                                   divisions: 12,
-                                  onChanged: (v) => setSheetState(() => adherence = v),
+                                  onChanged: (v) =>
+                                      setSheetState(() => adherence = v),
                                 ),
                               ],
                             ),
@@ -372,9 +580,15 @@ class _NutritionPageState extends State<NutritionPage>
                                   mealLabel: mealLabel,
                                   adherence: adherence.round(),
                                   proteinGrams:
-                                      int.tryParse(proteinController.text.trim()) ?? 25,
+                                      int.tryParse(
+                                        proteinController.text.trim(),
+                                      ) ??
+                                      25,
                                   hydrationLiters:
-                                      int.tryParse(hydrationController.text.trim()) ?? 1,
+                                      int.tryParse(
+                                        hydrationController.text.trim(),
+                                      ) ??
+                                      1,
                                   notes: extra,
                                 );
                               },
@@ -419,10 +633,9 @@ class _NutritionPageState extends State<NutritionPage>
                 ),
                 Text(
                   'Analizar comida con IA',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -431,7 +644,8 @@ class _NutritionPageState extends State<NutritionPage>
                       child: _SourceOptionButton(
                         icon: Icons.photo_camera_rounded,
                         label: 'Cámara',
-                        onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                        onTap: () =>
+                            Navigator.of(context).pop(ImageSource.camera),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -439,7 +653,8 @@ class _NutritionPageState extends State<NutritionPage>
                       child: _SourceOptionButton(
                         icon: Icons.photo_library_rounded,
                         label: 'Galería',
-                        onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                        onTap: () =>
+                            Navigator.of(context).pop(ImageSource.gallery),
                       ),
                     ),
                   ],
@@ -453,7 +668,10 @@ class _NutritionPageState extends State<NutritionPage>
     if (source == null || !mounted) return;
 
     // Step 2 — pick image
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 82);
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 82,
+    );
     if (picked == null || !mounted) return;
 
     // Step 3 — show full-screen analyzing overlay
@@ -477,7 +695,10 @@ class _NutritionPageState extends State<NutritionPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudo analizar la foto: $errorMsg'),
-          action: SnackBarAction(label: 'Reintentar', onPressed: _openPhotoAnalysisFlow),
+          action: SnackBarAction(
+            label: 'Reintentar',
+            onPressed: _openPhotoAnalysisFlow,
+          ),
         ),
       );
       return;
@@ -489,172 +710,361 @@ class _NutritionPageState extends State<NutritionPage>
     await _showPhotoResultSheet(picked.path, result);
   }
 
-  Future<void> _showPhotoResultSheet(String imagePath, Map<String, dynamic> result) async {
-    final detectedItems = (result['detected_items'] as List<dynamic>? ?? []).cast<String>();
+  Future<void> _showPhotoResultSheet(
+    String imagePath,
+    Map<String, dynamic> result,
+  ) async {
+    final detectedItems = (result['detected_items'] as List<dynamic>? ?? [])
+        .cast<String>();
+    final ingredients = (result['ingredients'] as List<dynamic>? ?? [])
+        .cast<String>();
+    var adjustedKcal =
+        (result['estimated_calories_kcal'] as num?)?.round() ?? 0;
+    var adjustedProtein = (result['estimated_protein_g'] as num?)?.round() ?? 0;
+    var adjustedCarbs = (result['estimated_carbs_g'] as num?)?.round() ?? 0;
+    var adjustedFat = (result['estimated_fat_g'] as num?)?.round() ?? 0;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.72,
-          minChildSize: 0.52,
-          maxChildSize: 0.96,
-          expand: false,
-          builder: (context, scrollController) {
-            return Material(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              color: Theme.of(context).colorScheme.surface,
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.72,
+              minChildSize: 0.52,
+              maxChildSize: 0.96,
+              expand: false,
+              builder: (context, scrollController) {
+                return Material(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  color: Theme.of(context).colorScheme.surface,
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.black12,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.file(
+                              File(imagePath),
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  result['detected_dish_name']?.toString() ??
+                                      'Comida detectada',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(height: 6),
+                                if ((result['serving_hint']?.toString() ?? '')
+                                    .isNotEmpty)
+                                  Text(
+                                    result['serving_hint'].toString(),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: Colors.black54),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _MacroRow(
+                        kcal: adjustedKcal,
+                        protein: adjustedProtein,
+                        carbs: adjustedCarbs,
+                        fat: adjustedFat,
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final adjusted = await _openMacroAdjustSheet(
+                              kcal: adjustedKcal,
+                              protein: adjustedProtein,
+                              carbs: adjustedCarbs,
+                              fat: adjustedFat,
+                            );
+                            if (adjusted == null) return;
+                            setSheetState(() {
+                              adjustedKcal = adjusted.$1;
+                              adjustedProtein = adjusted.$2;
+                              adjustedCarbs = adjusted.$3;
+                              adjustedFat = adjusted.$4;
+                            });
+                          },
+                          icon: const Icon(Icons.tune_rounded, size: 16),
+                          label: const Text('Ajustar macros'),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (detectedItems.isNotEmpty) ...[
+                        _PhotoSectionLabel(label: 'INGREDIENTES DETECTADOS'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: detectedItems
+                              .map(
+                                (item) => Chip(
+                                  label: Text(item),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if (ingredients.isNotEmpty) ...[
+                        _PhotoSectionLabel(label: 'INGREDIENTES ESTIMADOS'),
+                        const SizedBox(height: 8),
+                        ...ingredients.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.check_circle_outline_rounded,
+                                    size: 16,
+                                    color: _kBrand,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(item)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if ((result['confidence_note']?.toString() ?? '')
+                          .isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6F7FB),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFD8DDEA)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.info_outline_rounded,
+                                size: 18,
+                                color: _kBrand,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  result['confidence_note'].toString(),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: Colors.black87),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if ((result['coach_note']?.toString() ?? '')
+                          .isNotEmpty) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _kGreenLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            result['coach_note'].toString(),
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      FilledButton(
+                        onPressed: () async {
+                          Navigator.of(context).pop();
+                          await _submitNutrition(
+                            mealLabel: _mealLabel,
+                            adherence: 88,
+                            proteinGrams: adjustedProtein > 0
+                                ? adjustedProtein
+                                : 25,
+                            hydrationLiters: 1,
+                            notes:
+                                'Foto IA | ${result['detected_dish_name']} | '
+                                '$adjustedKcal kcal | '
+                                'P:$adjustedProtein C:$adjustedCarbs G:$adjustedFat | '
+                                'Detectados: ${detectedItems.join(', ')}'
+                                '${ingredients.isNotEmpty ? ' | Ingredientes: ${ingredients.join(', ')}' : ''}',
+                          );
+                        },
+                        child: const Text('Registrar esta comida'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _openPhotoAnalysisFlow();
+                        },
+                        child: const Text('Intentar de nuevo'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<(int, int, int, int)?> _openMacroAdjustSheet({
+    required int kcal,
+    required int protein,
+    required int carbs,
+    required int fat,
+  }) async {
+    final kcalController = TextEditingController(text: '$kcal');
+    final proteinController = TextEditingController(text: '$protein');
+    final carbsController = TextEditingController(text: '$carbs');
+    final fatController = TextEditingController(text: '$fat');
+    final result = await showModalBottomSheet<(int, int, int, int)>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Material(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
                     child: Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color: Colors.black12,
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
                   ),
-                  // Photo + dish name header
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Ajustar macros',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Corrige los valores antes de registrar la comida.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 16),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.file(
-                          File(imagePath),
-                          width: 88,
-                          height: 88,
-                          fit: BoxFit.cover,
+                      Expanded(
+                        child: _NumericField(
+                          controller: kcalController,
+                          label: 'Kcal',
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              result['detected_dish_name']?.toString() ?? 'Comida detectada',
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                            ),
-                            const SizedBox(height: 6),
-                            if ((result['serving_hint']?.toString() ?? '').isNotEmpty)
-                              Text(
-                                result['serving_hint'].toString(),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: Colors.black54),
-                              ),
-                          ],
+                        child: _NumericField(
+                          controller: proteinController,
+                          label: 'Proteína',
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // Macro chips
-                  _MacroRow(
-                    kcal: result['estimated_calories_kcal'],
-                    protein: result['estimated_protein_g'],
-                    carbs: result['estimated_carbs_g'],
-                    fat: result['estimated_fat_g'],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _NumericField(
+                          controller: carbsController,
+                          label: 'Carbos',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _NumericField(
+                          controller: fatController,
+                          label: 'Grasas',
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-
-                  // Detected items
-                  if (detectedItems.isNotEmpty) ...[
-                    Text(
-                      'INGREDIENTES DETECTADOS',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Colors.black45,
-                            letterSpacing: 0.8,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: detectedItems
-                          .map(
-                            (item) => Chip(
-                              label: Text(item),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-
-                  // Confidence note
-                  if ((result['confidence_note']?.toString() ?? '').isNotEmpty) ...[
-                    Text(
-                      result['confidence_note'].toString(),
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.black54),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-
-                  // Coach note
-                  if ((result['coach_note']?.toString() ?? '').isNotEmpty) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: _kGreenLight,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        result['coach_note'].toString(),
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Action buttons
+                  const SizedBox(height: 18),
                   FilledButton(
-                    onPressed: () async {
-                      Navigator.of(context).pop();
-                      await _submitNutrition(
-                        mealLabel: _mealLabel,
-                        adherence: 88,
-                        proteinGrams:
-                            (result['estimated_protein_g'] as num?)?.round() ?? 25,
-                        hydrationLiters: 1,
-                        notes:
-                            'Foto IA | ${result['detected_dish_name']} | ${result['estimated_calories_kcal']} kcal | ${detectedItems.join(', ')}',
-                      );
-                    },
-                    child: const Text('Registrar esta comida'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
-                      _openPhotoAnalysisFlow();
+                      Navigator.of(context).pop((
+                        int.tryParse(kcalController.text.trim()) ?? kcal,
+                        int.tryParse(proteinController.text.trim()) ?? protein,
+                        int.tryParse(carbsController.text.trim()) ?? carbs,
+                        int.tryParse(fatController.text.trim()) ?? fat,
+                      ));
                     },
-                    child: const Text('Intentar de nuevo'),
+                    child: const Text('Guardar ajuste'),
                   ),
                 ],
               ),
-            );
-          },
+            ),
+          ),
         );
       },
     );
+    kcalController.dispose();
+    proteinController.dispose();
+    carbsController.dispose();
+    fatController.dispose();
+    return result;
   }
 
   void _showHistoryDetail(Map<String, dynamic> entry) {
@@ -690,7 +1100,9 @@ class _NutritionPageState extends State<NutritionPage>
           expand: false,
           builder: (context, scrollController) {
             return Material(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               color: Theme.of(context).colorScheme.surface,
               child: ListView(
                 controller: scrollController,
@@ -709,17 +1121,16 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                   Text(
                     '${day['day_label'] ?? 'Día'} · ${day['date'] ?? ''}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     dayLogs.isEmpty
                         ? (day['is_past'] == true
-                            ? 'No hay comidas registradas. Aquí ves lo recomendado.'
-                            : 'Plan sugerido para este día.')
+                              ? 'No hay comidas registradas. Aquí ves lo recomendado.'
+                              : 'Plan sugerido para este día.')
                         : 'Tienes ${dayLogs.length} registro(s) para este día.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -732,7 +1143,11 @@ class _NutritionPageState extends State<NutritionPage>
                         meal: meal,
                         log: log,
                         isPast: day['is_past'] == true,
-                        onTap: () => _showMealDayDetail(day: day, meal: meal, logEntry: log),
+                        onTap: () => _showMealDayDetail(
+                          day: day,
+                          meal: meal,
+                          logEntry: log,
+                        ),
                       ),
                     );
                   }),
@@ -762,7 +1177,9 @@ class _NutritionPageState extends State<NutritionPage>
           expand: false,
           builder: (context, scrollController) {
             return Material(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               color: Theme.of(context).colorScheme.surface,
               child: ListView(
                 controller: scrollController,
@@ -781,14 +1198,15 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                   Text(
                     '${meal['title'] ?? 'Comida'} · ${day['day_label'] ?? ''}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    meal['meal_name']?.toString() ?? meal['meal']?.toString() ?? '',
+                    meal['meal_name']?.toString() ??
+                        meal['meal']?.toString() ??
+                        '',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 14),
@@ -825,7 +1243,10 @@ class _NutritionPageState extends State<NutritionPage>
                             color: _kBrandLight,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.image_outlined, color: _kBrand),
+                          child: const Icon(
+                            Icons.image_outlined,
+                            color: _kBrand,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -839,17 +1260,20 @@ class _NutritionPageState extends State<NutritionPage>
                               const SizedBox(height: 4),
                               Text(
                                 meal['meal_name']?.toString() ??
-                                    meal['meal']?.toString() ?? '',
+                                    meal['meal']?.toString() ??
+                                    '',
                               ),
                               const SizedBox(height: 8),
                               TextButton(
                                 style: TextButton.styleFrom(
                                   padding: EdgeInsets.zero,
                                   minimumSize: const Size(0, 30),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   alignment: Alignment.centerLeft,
                                 ),
-                                onPressed: () => showNutritionDetailSheet(context, meal),
+                                onPressed: () =>
+                                    showNutritionDetailSheet(context, meal),
                                 child: const Text('Ver receta y detalle'),
                               ),
                             ],
@@ -860,7 +1284,9 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    logEntry != null ? 'Registro realizado' : 'Registro del usuario',
+                    logEntry != null
+                        ? 'Registro realizado'
+                        : 'Registro del usuario',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
@@ -878,13 +1304,21 @@ class _NutritionPageState extends State<NutritionPage>
                             children: [
                               Text(
                                 'Adherencia ${logEntry['adherence_score'] ?? 0}%',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               const SizedBox(height: 6),
-                              Text('Proteína: ${logEntry['protein_grams'] ?? 0} g'),
+                              Text(
+                                'Proteína: ${logEntry['protein_grams'] ?? 0} g',
+                              ),
                               const SizedBox(height: 4),
-                              Text('Hidratación: ${logEntry['hydration_liters'] ?? 0} L'),
-                              if ((logEntry['notes']?.toString() ?? '').trim().isNotEmpty) ...[
+                              Text(
+                                'Hidratación: ${logEntry['hydration_liters'] ?? 0} L',
+                              ),
+                              if ((logEntry['notes']?.toString() ?? '')
+                                  .trim()
+                                  .isNotEmpty) ...[
                                 const SizedBox(height: 10),
                                 Text(logEntry['notes'].toString()),
                               ],
@@ -938,13 +1372,14 @@ class _NutritionPageState extends State<NutritionPage>
           child: (_isInitialLoading && _showShimmer)
               ? _buildLoading()
               : _isInitialLoading
-                  ? const SizedBox.shrink()
-                  : _viewData == null
-                      ? _buildError()
-                      : _buildContent(),
+              ? const SizedBox.shrink()
+              : _viewData == null
+              ? _buildError()
+              : _buildContent(),
         ),
         // Full-screen photo analysis overlay
-        if (_isAnalyzingPhoto) _AnalyzingOverlay(spinController: _analyzeSpinController),
+        if (_isAnalyzingPhoto)
+          _AnalyzingOverlay(spinController: _analyzeSpinController),
       ],
     );
   }
@@ -967,11 +1402,13 @@ class _NutritionPageState extends State<NutritionPage>
   Widget _buildContent() {
     final day = _selectedDay;
     final meals = _mealsForSelectedDay;
-    final weeklyDays = (_viewData!.summary['weekly_days'] as List<dynamic>? ?? [])
-        .map((d) => Map<String, dynamic>.from(d as Map))
-        .toList();
+    final weeklyDays =
+        (_viewData!.summary['weekly_days'] as List<dynamic>? ?? [])
+            .map((d) => Map<String, dynamic>.from(d as Map))
+            .toList();
     final selectedIdx =
-        _selectedDayIndex ?? (_viewData!.summary['selected_day_index'] as int? ?? 0);
+        _selectedDayIndex ??
+        (_viewData!.summary['selected_day_index'] as int? ?? 0);
 
     return RefreshIndicator(
       onRefresh: _refreshSilently,
@@ -989,10 +1426,37 @@ class _NutritionPageState extends State<NutritionPage>
           _PhotoAnalysisCTA(
             onTap: _isSubmitting ? null : _openPhotoAnalysisFlow,
           ),
+          const SizedBox(height: 12),
+
+          // ── T-20 — Shopping list CTA ──
+          _ShoppingListCTA(
+            onTap: () {
+              final weeklyDays =
+                  (_viewData!.summary['weekly_days'] as List<dynamic>? ?? []);
+              final allMeals = <dynamic>[];
+              for (final day in weeklyDays) {
+                final dayMap = day as Map<String, dynamic>;
+                final meals = dayMap['meals'] as List<dynamic>? ?? [];
+                allMeals.addAll(meals);
+              }
+              Navigator.of(context).pushNamed(
+                '/shopping-list',
+                arguments: allMeals,
+              );
+            },
+          ),
           const SizedBox(height: 16),
 
           // ── Today summary card ──
           _TodaySummaryCard(summary: _viewData!.summary),
+          const SizedBox(height: 14),
+          _CoachSwapTipCard(
+            swapTip: _viewData!.summary['swap_tip']?.toString() ?? '',
+            meal: _mealForSelectedLabel,
+            onViewOptions: _mealForSelectedLabel == null
+                ? null
+                : () => _openOptionBankSheet(_mealForSelectedLabel!),
+          ),
           const SizedBox(height: 20),
 
           // ── Weekly calendar ──
@@ -1000,12 +1464,14 @@ class _NutritionPageState extends State<NutritionPage>
           const SizedBox(height: 10),
           _WeekCalendar(
             days: weeklyDays,
-            selectedIndex: selectedIdx.clamp(0, math.max(0, weeklyDays.length - 1)),
+            selectedIndex: selectedIdx.clamp(
+              0,
+              math.max(0, weeklyDays.length - 1),
+            ),
             logsForDay: _logsForDay,
-            mealsForDay: (day) =>
-                ((day['meals'] as List<dynamic>? ?? [])
-                    .map((m) => Map<String, dynamic>.from(m as Map))
-                    .toList()),
+            mealsForDay: (day) => ((day['meals'] as List<dynamic>? ?? [])
+                .map((m) => Map<String, dynamic>.from(m as Map))
+                .toList()),
             matchLog: _matchLogForMeal,
             onDayTap: (index, item) {
               setState(() => _selectedDayIndex = index);
@@ -1019,7 +1485,6 @@ class _NutritionPageState extends State<NutritionPage>
             day: day,
             mealLabel: _mealLabel,
             isSubmitting: _isSubmitting,
-            swapTip: _viewData!.summary['swap_tip']?.toString() ?? '',
             onMealLabelChanged: (v) => setState(() => _mealLabel = v),
             onPhotoTap: _openPhotoAnalysisFlow,
             onManualTap: _openManualRegistration,
@@ -1104,7 +1569,11 @@ class _PhotoAnalysisCTA extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 26),
+              child: const Icon(
+                Icons.camera_alt_rounded,
+                color: Colors.white,
+                size: 26,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1114,22 +1583,25 @@ class _PhotoAnalysisCTA extends StatelessWidget {
                   Text(
                     'Analizar comida con IA',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Toma o sube una foto y obtén macros al instante',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.white70),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white54, size: 16),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white54,
+              size: 16,
+            ),
           ],
         ),
       ),
@@ -1162,11 +1634,15 @@ class _TodaySummaryCard extends StatelessWidget {
     final fatConsumed = _d(summary, 'fat_consumed_g', 0);
     final waterTarget = _d(summary, 'water_target_l', 2.5);
     final waterConsumed = _d(summary, 'water_consumed_l', 0);
-    final macroFocus = (summary['macro_focus'] as List<dynamic>? ?? []).cast<String>();
+    final macroFocus = (summary['macro_focus'] as List<dynamic>? ?? [])
+        .cast<String>();
 
     final calProgress = calorieTarget > 0
         ? (caloriesConsumed / calorieTarget).clamp(0.0, 1.0)
         : 0.0;
+    final calColor = _progressColor(
+      calorieTarget > 0 ? (caloriesConsumed / calorieTarget) : 0,
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -1187,23 +1663,15 @@ class _TodaySummaryCard extends StatelessWidget {
               Text(
                 'Hoy',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const Spacer(),
-              if (macroFocus.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    macroFocus.first,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ),
+              Text(
+                '${caloriesConsumed.round()} / ${calorieTarget.round()} kcal',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -1222,7 +1690,7 @@ class _TodaySummaryCard extends StatelessWidget {
                       painter: _RingPainter(
                         progress: calProgress,
                         trackColor: Colors.white12,
-                        progressColor: const Color(0xFF4CAF50),
+                        progressColor: calColor,
                         strokeWidth: 8,
                       ),
                     ),
@@ -1240,7 +1708,10 @@ class _TodaySummaryCard extends StatelessWidget {
                           ),
                           const Text(
                             'kcal',
-                            style: TextStyle(color: Colors.white54, fontSize: 10),
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 10,
+                            ),
                           ),
                         ],
                       ),
@@ -1258,21 +1729,18 @@ class _TodaySummaryCard extends StatelessWidget {
                       label: 'Proteína',
                       consumed: proteinConsumed,
                       target: proteinTarget,
-                      color: const Color(0xFF4FC3F7),
                     ),
                     const SizedBox(height: 8),
                     _MacroBar(
                       label: 'Carbos',
                       consumed: carbsConsumed,
                       target: carbsTarget,
-                      color: const Color(0xFFAED581),
                     ),
                     const SizedBox(height: 8),
                     _MacroBar(
                       label: 'Grasas',
                       consumed: fatConsumed,
                       target: fatTarget,
-                      color: const Color(0xFFFFD54F),
                     ),
                   ],
                 ),
@@ -1285,7 +1753,11 @@ class _TodaySummaryCard extends StatelessWidget {
           // Water bar
           Row(
             children: [
-              const Icon(Icons.water_drop_outlined, color: Colors.lightBlueAccent, size: 16),
+              const Icon(
+                Icons.water_drop_outlined,
+                color: Colors.lightBlueAccent,
+                size: 16,
+              ),
               const SizedBox(width: 6),
               Text(
                 'Agua  ${waterConsumed.toStringAsFixed(1)} / ${waterTarget.toStringAsFixed(1)} L',
@@ -1302,7 +1774,9 @@ class _TodaySummaryCard extends StatelessWidget {
                   : 0.0,
               minHeight: 6,
               backgroundColor: Colors.white12,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.lightBlueAccent),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Colors.lightBlueAccent,
+              ),
             ),
           ),
 
@@ -1312,9 +1786,41 @@ class _TodaySummaryCard extends StatelessWidget {
             'Objetivo: ${calorieTarget.round()} kcal · ${(calorieTarget - caloriesConsumed).clamp(0, calorieTarget).round()} restantes',
             style: const TextStyle(color: Colors.white54, fontSize: 11),
           ),
+          if (macroFocus.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: macroFocus
+                  .map(
+                    (label) => _SmallPill(
+                      label: label,
+                      color: _macroFocusColor(label),
+                      textColor: Colors.white,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  static Color _progressColor(double rawProgress) {
+    if (rawProgress < 0.9) return const Color(0xFF4CAF50);
+    if (rawProgress <= 1.05) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF5350);
+  }
+
+  static Color _macroFocusColor(String label) {
+    final normalized = label.toLowerCase();
+    if (normalized.contains('prote')) return const Color(0xFF2D7FF9);
+    if (normalized.contains('carb')) return const Color(0xFFF59E0B);
+    if (normalized.contains('gras') || normalized.contains('saciedad')) {
+      return const Color(0xFF2E7D52);
+    }
+    return Colors.white.withValues(alpha: 0.16);
   }
 }
 
@@ -1362,8 +1868,8 @@ class _WeekCalendar extends StatelessWidget {
           final dotColor = status == 'full'
               ? _kGreen
               : status == 'partial'
-                  ? _kAmber
-                  : Colors.black12;
+              ? _kAmber
+              : Colors.black12;
 
           return GestureDetector(
             onTap: () => onDayTap(index, item),
@@ -1372,7 +1878,9 @@ class _WeekCalendar extends StatelessWidget {
               width: 60,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
               decoration: BoxDecoration(
-                color: selected ? _kBrand : Theme.of(context).colorScheme.surface,
+                color: selected
+                    ? _kBrand
+                    : Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: selected ? _kBrand : _kGrey,
@@ -1392,7 +1900,9 @@ class _WeekCalendar extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    (item['day_label']?.toString() ?? '-').substring(0, 3).toUpperCase(),
+                    (item['day_label']?.toString() ?? '-')
+                        .substring(0, 3)
+                        .toUpperCase(),
                     style: TextStyle(
                       color: selected ? Colors.white : Colors.black87,
                       fontWeight: FontWeight.w700,
@@ -1427,13 +1937,106 @@ class _WeekCalendar extends StatelessWidget {
   }
 }
 
+class _CoachSwapTipCard extends StatelessWidget {
+  final String swapTip;
+  final Map<String, dynamic>? meal;
+  final VoidCallback? onViewOptions;
+
+  const _CoachSwapTipCard({
+    required this.swapTip,
+    required this.meal,
+    required this.onViewOptions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (swapTip.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6DB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF3E1A6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFCE9A8),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.lightbulb_rounded, color: _kAmber),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '💡 Sugerencia del coach',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  swapTip,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.black87,
+                    height: 1.35,
+                  ),
+                ),
+                if (meal != null) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _SmallPill(
+                        label: meal!['title']?.toString() ?? 'Comida',
+                        color: _kBrandLight,
+                        textColor: _kBrand,
+                      ),
+                      TextButton(
+                        onPressed: onViewOptions,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: Colors.white,
+                          foregroundColor: _kBrand,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                            side: const BorderSide(color: Color(0xFFE8DDC2)),
+                          ),
+                        ),
+                        child: const Text('Ver opciones'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Register Card ─────────────────────────────────────────────────────────────
 
 class _RegisterCard extends StatelessWidget {
   final Map<String, dynamic>? day;
   final String mealLabel;
   final bool isSubmitting;
-  final String swapTip;
   final ValueChanged<String> onMealLabelChanged;
   final VoidCallback onPhotoTap;
   final VoidCallback onManualTap;
@@ -1442,7 +2045,6 @@ class _RegisterCard extends StatelessWidget {
     required this.day,
     required this.mealLabel,
     required this.isSubmitting,
-    required this.swapTip,
     required this.onMealLabelChanged,
     required this.onPhotoTap,
     required this.onManualTap,
@@ -1497,16 +2099,6 @@ class _RegisterCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (swapTip.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                swapTip,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.black54),
-              ),
-            ],
           ],
         ),
       ),
@@ -1569,7 +2161,8 @@ class _MealTimelineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = meal['title']?.toString() ?? 'Comida';
-    final mealName = meal['meal_name']?.toString() ?? meal['meal']?.toString() ?? '';
+    final mealName =
+        meal['meal_name']?.toString() ?? meal['meal']?.toString() ?? '';
     final kcal = meal['calories_kcal'];
     final protein = meal['protein_g'];
     final time = meal['scheduled_time']?.toString();
@@ -1597,16 +2190,15 @@ class _MealTimelineCard extends StatelessWidget {
                     ),
                   ),
                   child: logged
-                      ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 14,
+                        )
                       : null,
                 ),
                 if (!isLast)
-                  Expanded(
-                    child: Container(
-                      width: 2,
-                      color: _kGrey,
-                    ),
-                  ),
+                  Expanded(child: Container(width: 2, color: _kGrey)),
               ],
             ),
           ),
@@ -1636,7 +2228,11 @@ class _MealTimelineCard extends StatelessWidget {
                             color: mealBg,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(_mealIcon(title), color: _kBrand, size: 22),
+                          child: Icon(
+                            _mealIcon(title),
+                            color: _kBrand,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -1668,7 +2264,10 @@ class _MealTimelineCard extends StatelessWidget {
                                 const SizedBox(height: 2),
                                 Text(
                                   mealName,
-                                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black54,
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1682,24 +2281,30 @@ class _MealTimelineCard extends StatelessWidget {
                                     label: logged
                                         ? 'Registrada'
                                         : isPast
-                                            ? 'No registrada'
-                                            : 'Planificada',
+                                        ? 'No registrada'
+                                        : 'Planificada',
                                     color: logged
                                         ? _kGreenLight
                                         : isPast
-                                            ? const Color(0xFFFFE8E8)
-                                            : _kAmberLight,
+                                        ? const Color(0xFFFFE8E8)
+                                        : _kAmberLight,
                                   ),
-                                  if (kcal != null && kcal.toString().isNotEmpty)
+                                  if (kcal != null &&
+                                      kcal.toString().isNotEmpty)
                                     _SmallPill(label: '$kcal kcal'),
-                                  if (protein != null && protein.toString().isNotEmpty)
+                                  if (protein != null &&
+                                      protein.toString().isNotEmpty)
                                     _SmallPill(label: 'P ${protein}g'),
                                 ],
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right_rounded, color: Colors.black26, size: 20),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Colors.black26,
+                          size: 20,
+                        ),
                       ],
                     ),
                   ),
@@ -1726,7 +2331,10 @@ class _HistorySection extends StatelessWidget {
     if (history.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text('Sin registros recientes.', style: TextStyle(color: Colors.black45)),
+        child: Text(
+          'Sin registros recientes.',
+          style: TextStyle(color: Colors.black45),
+        ),
       );
     }
 
@@ -1749,15 +2357,15 @@ class _HistorySection extends StatelessWidget {
               child: Text(
                 group.key,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.black45,
-                      letterSpacing: 0.6,
-                    ),
+                  color: Colors.black45,
+                  letterSpacing: 0.6,
+                ),
               ),
             ),
-            ...group.value.map((entry) => _HistoryEntryCard(
-                  entry: entry,
-                  onTap: () => onTap(entry),
-                )),
+            ...group.value.map(
+              (entry) =>
+                  _HistoryEntryCard(entry: entry, onTap: () => onTap(entry)),
+            ),
             const SizedBox(height: 12),
           ],
         );
@@ -1778,13 +2386,16 @@ class _HistoryEntryCard extends StatelessWidget {
     final adherence = entry['adherence_score'] as int? ?? 0;
     final protein = entry['protein_grams'];
     final hydration = entry['hydration_liters'];
-    final time = (entry['logged_at']?.toString() ?? '').split('T').last.substring(0, 5);
+    final time = (entry['logged_at']?.toString() ?? '')
+        .split('T')
+        .last
+        .substring(0, 5);
     final mealBg = _mealColor(label);
     final adherenceColor = adherence >= 80
         ? _kGreen
         : adherence >= 50
-            ? _kAmber
-            : Colors.red.shade400;
+        ? _kAmber
+        : Colors.red.shade400;
 
     return Dismissible(
       key: ValueKey(entry['id'] ?? entry['logged_at']),
@@ -1855,7 +2466,10 @@ class _HistoryEntryCard extends StatelessWidget {
                           const Spacer(),
                           Text(
                             time,
-                            style: const TextStyle(color: Colors.black38, fontSize: 11),
+                            style: const TextStyle(
+                              color: Colors.black38,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -1869,12 +2483,14 @@ class _HistoryEntryCard extends StatelessWidget {
                             color: adherence >= 80
                                 ? _kGreenLight
                                 : adherence >= 50
-                                    ? _kAmberLight
-                                    : const Color(0xFFFFE8E8),
+                                ? _kAmberLight
+                                : const Color(0xFFFFE8E8),
                             textColor: adherenceColor,
                           ),
-                          if (protein != null) _SmallPill(label: 'P ${protein}g'),
-                          if (hydration != null) _SmallPill(label: '${hydration}L'),
+                          if (protein != null)
+                            _SmallPill(label: 'P ${protein}g'),
+                          if (hydration != null)
+                            _SmallPill(label: '${hydration}L'),
                         ],
                       ),
                     ],
@@ -1912,23 +2528,26 @@ class _AnalyzingOverlay extends StatelessWidget {
             children: [
               RotationTransition(
                 turns: spinController,
-                child: const Icon(Icons.camera_enhance_rounded, size: 56, color: _kBrand),
+                child: const Icon(
+                  Icons.camera_enhance_rounded,
+                  size: 56,
+                  color: _kBrand,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 'Analizando tu comida...',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
                 'La IA está identificando macros e ingredientes',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.black45),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black45),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1969,7 +2588,10 @@ class _SourceOptionButton extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w600, color: _kBrand),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: _kBrand,
+              ),
             ),
           ],
         ),
@@ -1992,16 +2614,44 @@ class _MacroRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final chips = <_MacroChipData>[];
     if (kcal != null && kcal.toString().isNotEmpty) {
-      chips.add(_MacroChipData(emoji: '🔥', value: '$kcal', unit: 'kcal', color: const Color(0xFFFFEDCC)));
+      chips.add(
+        _MacroChipData(
+          emoji: '🔥',
+          value: '$kcal',
+          unit: 'kcal',
+          color: const Color(0xFFFFEDCC),
+        ),
+      );
     }
     if (protein != null && protein.toString().isNotEmpty) {
-      chips.add(_MacroChipData(emoji: '🥩', value: '$protein', unit: 'g prot', color: const Color(0xFFDCEEDC)));
+      chips.add(
+        _MacroChipData(
+          emoji: '🥩',
+          value: '$protein',
+          unit: 'g prot',
+          color: const Color(0xFFDCEEDC),
+        ),
+      );
     }
     if (carbs != null && carbs.toString().isNotEmpty) {
-      chips.add(_MacroChipData(emoji: '🌾', value: '$carbs', unit: 'g carb', color: const Color(0xFFE8E4F4)));
+      chips.add(
+        _MacroChipData(
+          emoji: '🌾',
+          value: '$carbs',
+          unit: 'g carb',
+          color: const Color(0xFFE8E4F4),
+        ),
+      );
     }
     if (fat != null && fat.toString().isNotEmpty) {
-      chips.add(_MacroChipData(emoji: '🫙', value: '$fat', unit: 'g gras', color: const Color(0xFFFFF3E0)));
+      chips.add(
+        _MacroChipData(
+          emoji: '🫙',
+          value: '$fat',
+          unit: 'g gras',
+          color: const Color(0xFFFFF3E0),
+        ),
+      );
     }
 
     if (chips.isEmpty) return const SizedBox.shrink();
@@ -2010,6 +2660,44 @@ class _MacroRow extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: chips.map((c) => _MacroChipWidget(data: c)).toList(),
+    );
+  }
+}
+
+class _PhotoSectionLabel extends StatelessWidget {
+  const _PhotoSectionLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Colors.black45,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _NumericField extends StatelessWidget {
+  const _NumericField({required this.controller, required this.label});
+
+  final TextEditingController controller;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        filled: true,
+        fillColor: Colors.white,
+      ),
     );
   }
 }
@@ -2050,7 +2738,10 @@ class _MacroChipWidget extends StatelessWidget {
             children: [
               Text(
                 data.value,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
               Text(
                 data.unit,
@@ -2070,18 +2761,18 @@ class _MacroBar extends StatelessWidget {
   final String label;
   final double consumed;
   final double target;
-  final Color color;
 
   const _MacroBar({
     required this.label,
     required this.consumed,
     required this.target,
-    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     final progress = target > 0 ? (consumed / target).clamp(0.0, 1.0) : 0.0;
+    final ratio = target > 0 ? (consumed / target) : 0.0;
+    final color = _TodaySummaryCard._progressColor(ratio);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2196,10 +2887,10 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       label,
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Colors.black45,
-            letterSpacing: 0.9,
-            fontWeight: FontWeight.w600,
-          ),
+        color: Colors.black45,
+        letterSpacing: 0.9,
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 }
@@ -2230,6 +2921,68 @@ class _NutritionViewData {
       summary: summary ?? this.summary,
       history: history ?? this.history,
       coachingStyle: coachingStyle ?? this.coachingStyle,
+    );
+  }
+}
+
+// ─── T-20 — Shopping list CTA widget ──────────────────────────────────────────
+
+class _ShoppingListCTA extends StatelessWidget {
+  const _ShoppingListCTA({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE7EFEA),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFB6D6C8)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _kBrand,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.shopping_cart_outlined,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Lista de compras',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: _kBrand,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Genera tu lista semanal de ingredientes agrupados.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: _kBrand),
+          ],
+        ),
+      ),
     );
   }
 }

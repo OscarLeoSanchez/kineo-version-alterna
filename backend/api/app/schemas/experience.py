@@ -20,7 +20,16 @@ class WorkoutSummaryRead(BaseModel):
 
 class NutritionSummaryRead(BaseModel):
     title: str
-    calorie_target: str
+    calorie_target: float
+    calories_consumed_today: float = 0
+    protein_target_g: float = 0
+    protein_consumed_g: float = 0
+    carbs_target_g: float = 0
+    carbs_consumed_g: float = 0
+    fat_target_g: float = 0
+    fat_consumed_g: float = 0
+    water_target_l: float = 0
+    water_consumed_l: float = 0
     macro_focus: list[str]
     meals: list[dict[str, Any]]
     swap_tip: str

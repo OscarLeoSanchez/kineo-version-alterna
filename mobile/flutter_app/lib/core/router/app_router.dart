@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../features/auth/presentation/pages/auth_page.dart';
 import '../../features/dashboard/presentation/pages/home_shell.dart';
 import '../../features/history/presentation/pages/history_page.dart';
+import '../../features/nutrition/presentation/pages/shopping_list_page.dart';
 import '../../features/onboarding/presentation/pages/onboarding_page.dart';
 import '../../features/plans/presentation/pages/plan_generation_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
+import '../../features/progress/presentation/pages/progress_page.dart';
 import '../../features/settings/presentation/pages/goals_settings_page.dart';
 import '../../features/subscription/presentation/pages/subscription_page.dart';
 import '../../features/workout/presentation/screens/workout_mode_screen.dart';
@@ -20,6 +22,8 @@ class AppRouter {
   static const String profile = '/profile';
   static const String controlCenter = '/control-center';
   static const String workoutMode = '/workout-mode';
+  static const String progress = '/progress';
+  static const String shoppingList = '/shopping-list';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -38,6 +42,10 @@ class AppRouter {
       case controlCenter:
         return _buildAnimatedRoute(settings);
       case workoutMode:
+        return _buildAnimatedRoute(settings);
+      case progress:
+        return _buildAnimatedRoute(settings);
+      case shoppingList:
         return _buildAnimatedRoute(settings);
       case dashboard:
       default:
@@ -130,6 +138,12 @@ class AppRouter {
               DateTime.now().toIso8601String().substring(0, 10),
           blockTitle: args['blockTitle'] as String?,
         );
+      case progress:
+        return const ProgressPage();
+      case shoppingList:
+        final meals =
+            settings?.arguments as List<dynamic>? ?? const <dynamic>[];
+        return ShoppingListPage(weeklyMeals: meals);
       case dashboard:
       default:
         return const HomeShellPage();

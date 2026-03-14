@@ -57,31 +57,31 @@
 - **Archivo:** `workout_page.dart` y `workout_detail_sheet.dart`
 - **Datos disponibles:** `warmup: list[str]`, `cooldown: list[str]` por `DailyWorkoutPlan`
 - **Qué hacer:**
-  - [ ] Añadir sección "Calentamiento" expandible antes de los bloques
-  - [ ] Añadir sección "Vuelta a la calma" expandible después de los bloques
-  - [ ] Cada ítem como chip o lista con ícono de fuego/agua
+  - [x] Añadir sección "Calentamiento" expandible antes de los bloques
+  - [x] Añadir sección "Vuelta a la calma" expandible después de los bloques
+  - [x] Cada ítem como chip o lista con ícono de fuego/agua
 
 ### T-06 — `adaptation_hint` como consejo del coach en workout
 - **Archivo:** `workout_page.dart`
 - **Datos disponibles:** `adaptation_hint: str` por sesión
 - **Qué hacer:**
-  - [ ] Tarjeta destacada al inicio de la sesión con ícono de coach
-  - [ ] Fondo diferenciado (ej: teal oscuro) para que destaque
-  - [ ] Texto: "Tu coach dice: [adaptation_hint]"
+  - [x] Tarjeta destacada al inicio de la sesión con ícono de coach
+  - [x] Fondo diferenciado (ej: teal oscuro) para que destaque
+  - [x] Texto: "Tu coach dice: [adaptation_hint]"
 
 ### T-07 — `intensity` visible en sesión de workout
 - **Archivo:** `workout_page.dart`
 - **Datos disponibles:** `intensity: str` (ej: "Moderada", "Alta", "Baja")
 - **Qué hacer:**
-  - [ ] Chip de intensidad junto al título de la sesión
-  - [ ] Colores: rojo=Alta, ámbar=Moderada, verde=Baja
+  - [x] Chip de intensidad junto al título de la sesión
+  - [x] Colores: rojo=Alta, ámbar=Moderada, verde=Baja
 
 ### T-08 — `best_for` y reasoning en detalle de comida
 - **Archivo:** `nutrition_detail_sheet.dart`
 - **Datos disponibles:** `best_for: str` (ej: "Post-entrenamiento, alta proteína")
 - **Qué hacer:**
-  - [ ] Añadir badge/chip "Ideal para:" al inicio del sheet
-  - [ ] Tooltip o ExpansionTile "¿Por qué esta comida?" con el texto de `best_for`
+  - [x] Añadir badge/chip "Ideal para:" al inicio del sheet
+  - [x] Tooltip o ExpansionTile "¿Por qué esta comida?" con el texto de `best_for`
 
 ---
 
@@ -91,54 +91,54 @@
 - **Archivo:** `dashboard_page.dart`
 - **Datos disponibles:** `weekly_adherence: int`, `completed_sessions: int`, `workout_completion_rate: int`
 - **Qué hacer:**
-  - [ ] Fila de métricas debajo del header: "Adherencia X%", "X sesiones completadas"
-  - [ ] `weekly_adherence` con ProgressIndicator circular pequeño
-  - [ ] Color basado en valor: verde ≥80%, ámbar 50–79%, rojo <50%
+  - [x] Fila de métricas debajo del header: "Adherencia X%", "X sesiones completadas"
+  - [x] `weekly_adherence` con ProgressIndicator circular pequeño
+  - [x] Color basado en valor: verde ≥80%, ámbar 50–79%, rojo <50%
 
 ### T-10 — Racha de días (`streak_days`) con motivación
 - **Archivo:** `dashboard_page.dart`
 - **Datos disponibles:** `streak_days: int`
 - **Qué hacer:**
-  - [ ] Badge de llama 🔥 con número de días en el header del dashboard
-  - [ ] Mensaje motivacional según racha: 1–6 días, 7–13, 14–29, 30+
-  - [ ] Animación suave al cargar
+  - [x] Badge de llama 🔥 con número de días en el header del dashboard
+  - [x] Mensaje motivacional según racha: 1–6 días, 7–13, 14–29, 30+
+  - [x] Animación suave al cargar
 
 ### T-11 — Panel de insights de la IA
 - **Archivo:** `dashboard_page.dart`
 - **Datos disponibles:** `insights: list[dict]` (insights accionables generados por la IA)
 - **Qué hacer:**
-  - [ ] Sección "Insights de tu coach" con cards deslizables (PageView horizontal)
-  - [ ] Cada insight: ícono, título corto, texto, botón de acción opcional
-  - [ ] Máximo 3 insights visibles, resto ocultos bajo "Ver más"
+  - [x] Sección "Insights de tu coach" con cards deslizables (PageView horizontal)
+  - [x] Cada insight: ícono, título corto, texto, botón de acción opcional
+  - [x] Máximo 3 insights visibles, resto ocultos bajo "Ver más"
 
 ### T-12 — Tracking de macros acumulado del día en Nutrición
 - **Archivo:** `nutrition_page.dart`
 - **Qué hacer:**
-  - [ ] Sumar macros de todas las comidas registradas en el día
-  - [ ] Mostrar acumulado vs. meta en `_TodaySummaryCard` (ya existe la card)
-  - [ ] Actualizar en tiempo real al registrar una comida sin recargar toda la página
-  - [ ] Requiere: endpoint o cálculo client-side sumando `nutrition_logs` del día
+  - [x] Sumar macros de todas las comidas registradas en el día
+  - [x] Mostrar acumulado vs. meta en `_TodaySummaryCard` (ya existe la card)
+  - [x] Actualizar en tiempo real al registrar una comida sin recargar toda la página
+  - [x] Requiere: endpoint o cálculo client-side sumando `nutrition_logs` del día
 
 ### T-13 — Ajuste de macros detectados en análisis de foto
 - **Archivo:** `nutrition_page.dart`
 - **Qué hacer:**
-  - [ ] En el resultado de análisis de foto, añadir botón "✏️ Ajustar"
-  - [ ] Sheet con campos editables: calorías, proteínas, carbos, grasas
-  - [ ] Al registrar, usar los valores ajustados en lugar de los de la IA
+  - [x] En el resultado de análisis de foto, añadir botón "✏️ Ajustar"
+  - [x] Sheet con campos editables: calorías, proteínas, carbos, grasas
+  - [x] Al registrar, usar los valores ajustados en lugar de los de la IA
 
 ### T-14 — "¿Por qué esta comida?" en Nutrition Detail Sheet
 - **Archivo:** `nutrition_detail_sheet.dart`
 - **Qué hacer:**
-  - [ ] ExpansionTile al final del sheet: "¿Por qué la IA recomienda esto?"
-  - [ ] Mostrar `best_for`, macros vs. target del usuario, contexto de la franja horaria
-  - [ ] Requiere: pasar `calorie_target` y `macro_focus` al sheet
+  - [x] ExpansionTile al final del sheet: "¿Por qué la IA recomienda esto?"
+  - [x] Mostrar `best_for`, macros vs. target del usuario, contexto de la franja horaria
+  - [x] Requiere: pasar `calorie_target` y `macro_focus` al sheet
 
 ### T-15 — `weight_trend` en Dashboard
 - **Archivo:** `dashboard_page.dart`
 - **Datos disponibles:** `weight_trend: str` ("subiendo", "bajando", "estable")
 - **Qué hacer:**
-  - [ ] Indicador visual junto al peso actual: ↑ rojo, ↓ verde, → gris
-  - [ ] Mini texto: "Tendencia esta semana"
+  - [x] Indicador visual junto al peso actual: ↑ rojo, ↓ verde, → gris
+  - [x] Mini texto: "Tendencia esta semana"
 
 ---
 
@@ -156,11 +156,11 @@
 ### T-17 — Dashboard de tendencias semanales
 - **Archivos:** nuevo `progress_page.dart` o sección en dashboard
 - **Qué hacer:**
-  - [ ] Gráfico de adherencia nutricional por día (7 días)
-  - [ ] Gráfico de sesiones de workout completadas
-  - [ ] Gráfico de peso (si el usuario lo registra)
-  - [ ] Usar `fl_chart` (ya disponible en pubspec) o similar
-  - [ ] Datos: `/api/v1/activity/nutrition` y `/api/v1/activity/exercise-logs`
+  - [x] Gráfico de adherencia nutricional por día (7 días)
+  - [x] Gráfico de sesiones de workout completadas
+  - [x] Gráfico de peso (si el usuario lo registra)
+  - [x] Usar `fl_chart` (ya disponible en pubspec) o similar
+  - [x] Datos: `/api/v1/activity/nutrition` y `/api/v1/activity/exercise-logs`
 
 ### T-18 — Notificaciones inteligentes basadas en el plan
 - **Qué hacer:**
@@ -172,18 +172,18 @@
 ### T-19 — Fix: `exact_alarms_not_permitted` en Goals Settings
 - **Archivo:** `goals_settings_page.dart:65`, `local_notification_service.dart:50`
 - **Qué hacer:**
-  - [ ] Verificar permisos antes de llamar `zonedSchedule`
-  - [ ] Usar `canScheduleExactAlarms()` y pedir permiso si no está concedido
-  - [ ] Fallback: usar `periodicallyShow` en lugar de exact alarm si no hay permiso
+  - [x] Verificar permisos antes de llamar `zonedSchedule`
+  - [x] Usar `canScheduleExactAlarms()` y pedir permiso si no está concedido
+  - [x] Fallback: usar `periodicallyShow` en lugar de exact alarm si no hay permiso
 
 ### T-20 — Lista de compras desde el plan nutricional
 - **Archivos:** nuevo `shopping_list_page.dart`
 - **Qué hacer:**
-  - [ ] Agregar botón "🛒 Lista de compras" en la pestaña de nutrición
-  - [ ] Consolidar `ingredients_with_quantities` de todas las comidas de la semana
-  - [ ] Agrupar por categoría (proteínas, verduras, lácteos, etc.)
-  - [ ] Checkboxes para marcar lo que ya se tiene
-  - [ ] Compartir lista como texto plano
+  - [x] Agregar botón "🛒 Lista de compras" en la pestaña de nutrición
+  - [x] Consolidar `ingredients_with_quantities` de todas las comidas de la semana
+  - [x] Agrupar por categoría (proteínas, verduras, lácteos, etc.)
+  - [x] Checkboxes para marcar lo que ya se tiene
+  - [x] Compartir lista como texto plano
 
 ---
 

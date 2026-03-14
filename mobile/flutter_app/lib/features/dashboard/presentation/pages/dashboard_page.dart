@@ -20,6 +20,75 @@ import '../../../progress/data/services/body_metric_api_service.dart';
 import '../../../progress/data/services/progress_api_service.dart';
 import '../../../workout/data/services/workout_log_api_service.dart';
 
+class _NutritionRouteOption {
+  const _NutritionRouteOption({
+    required this.value,
+    required this.title,
+    required this.description,
+  });
+
+  final String value;
+  final String title;
+  final String description;
+}
+
+class _EnergyOption {
+  const _EnergyOption({
+    required this.value,
+    required this.title,
+    required this.description,
+  });
+
+  final String value;
+  final String title;
+  final String description;
+}
+
+const _nutritionRouteOptions = <_NutritionRouteOption>[
+  _NutritionRouteOption(
+    value: 'Plan casi completo',
+    title: 'Seguí el plan',
+    description: 'Comí casi como estaba recomendado, con pocos cambios.',
+  ),
+  _NutritionRouteOption(
+    value: 'Con ajustes razonables',
+    title: 'Hice ajustes',
+    description: 'Cambié opciones o porciones, pero mantuve buena estructura.',
+  ),
+  _NutritionRouteOption(
+    value: 'Comida social o improvisada',
+    title: 'Fue social o improvisado',
+    description:
+        'Comí fuera o resolví sobre la marcha y me alejé más del plan.',
+  ),
+];
+
+const _energyRouteOptions = <_EnergyOption>[
+  _EnergyOption(
+    value: 'Me sobro energia',
+    title: 'Me sobró energía',
+    description: 'Terminé fuerte y con margen para hacer un poco más.',
+  ),
+  _EnergyOption(
+    value: 'Me senti estable',
+    title: 'Me sentí estable',
+    description: 'La sesión se sintió bien y dentro de lo esperado.',
+  ),
+  _EnergyOption(
+    value: 'Me costo terminar',
+    title: 'Me costó terminar',
+    description: 'Terminé cansado o con la energía más justa.',
+  ),
+];
+
+const _durationRouteOptions = <int>[20, 30, 45, 60];
+const _focusQuickOptions = <String>[
+  'Fuerza principal',
+  'Cardio y acondicionamiento',
+  'Movilidad y recuperacion',
+  'Sesion mixta',
+];
+
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -114,8 +183,8 @@ class _DashboardPageState extends State<DashboardPage> {
     final fullName = (latestProfile?.fullName?.isNotEmpty == true)
         ? latestProfile!.fullName!
         : (session?.fullName.isNotEmpty == true)
-            ? session!.fullName
-            : '';
+        ? session!.fullName
+        : '';
 
     final todayStatus = _buildTodayStatus(history);
 
@@ -377,10 +446,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           value: 'Cambio de meta',
                           child: Text('Cambio de meta'),
                         ),
-                        DropdownMenuItem(
-                          value: 'Otro',
-                          child: Text('Otro'),
-                        ),
+                        DropdownMenuItem(value: 'Otro', child: Text('Otro')),
                       ],
                       onChanged: (value) {
                         setSheetState(() {
@@ -425,7 +491,9 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _sendCoachReport(String message, String category) async {
     try {
       final session = AuthSessionScope.of(context).session;
-      final uri = Uri.parse('${AppConfig.apiBaseUrl}/api/v1/plans/coach-report');
+      final uri = Uri.parse(
+        '${AppConfig.apiBaseUrl}/api/v1/plans/coach-report',
+      );
       await http.post(
         uri,
         headers: {
@@ -440,7 +508,9 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tu reporte fue recibido. Tu plan se actualizará pronto.'),
+        content: Text(
+          'Tu reporte fue recibido. Tu plan se actualizará pronto.',
+        ),
       ),
     );
   }
@@ -520,9 +590,9 @@ class _DashboardPageState extends State<DashboardPage> {
         energyLevel: energyLevel,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Workout actualizado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Workout actualizado.')));
       _refreshDashboard();
     } finally {
       focusController.dispose();
@@ -531,69 +601,115 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _editRecentNutrition(Map<String, dynamic> item) async {
-    String mealLabel = item['meal_label']?.toString() ?? 'Dia estructurado';
+    String mealLabel =
+        item['meal_label']?.toString() ?? _nutritionRouteOptions.first.value;
     double adherence = (item['adherence_score'] as num?)?.toDouble() ?? 80;
+    final legacyOption =
+        mealLabel.trim().isNotEmpty &&
+            !_nutritionRouteOptions.any((option) => option.value == mealLabel)
+        ? _NutritionRouteOption(
+            value: mealLabel,
+            title: 'Registro anterior',
+            description:
+                'Mantén esta etiqueta si el registro viejo no encaja en las categorías nuevas.',
+          )
+        : null;
+    final options = [
+      ..._nutritionRouteOptions,
+      if (legacyOption != null) legacyOption,
+    ];
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Editar nutricion'),
-          content: StatefulBuilder(
-            builder: (context, setModalState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: mealLabel,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Dia estructurado',
-                        child: Text('Dia estructurado'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Dia flexible',
-                        child: Text('Dia flexible'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Dia social',
-                        child: Text('Dia social'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        mealLabel = value ?? 'Dia estructurado';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text('Adherencia: ${adherence.round()}%'),
-                  Slider(
-                    value: adherence,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: adherence.round().toString(),
-                    onChanged: (value) {
-                      setModalState(() {
-                        adherence = value;
-                      });
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Guardar'),
-            ),
-          ],
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final selected = options.firstWhere(
+              (option) => option.value == mealLabel,
+              orElse: () => options.first,
+            );
+            return _BottomSheetFrame(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RouteSheetHeader(
+                      title: 'Editar nutricion',
+                      subtitle:
+                          'Ajusta como resolviste tu dia y corrige la adherencia si hace falta.',
+                      icon: Icons.restaurant_menu_rounded,
+                      onClose: () => Navigator.of(sheetContext).pop(false),
+                    ),
+                    const SizedBox(height: 18),
+                    _SectionTitleMini('¿Cómo estuvo tu alimentación hoy?'),
+                    const SizedBox(height: 10),
+                    Column(
+                      children: options
+                          .map(
+                            (option) => _ChoicePill(
+                              label: option.title,
+                              description: option.description,
+                              selected: mealLabel == option.value,
+                              onTap: () {
+                                setModalState(() => mealLabel = option.value);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    _MetricPreviewCard(
+                      title: 'Adherencia',
+                      value: '${adherence.round()}%',
+                      helper:
+                          '${selected.title}. Mueve el indicador según qué tan cerca estuviste de lo recomendado.',
+                    ),
+                    Slider(
+                      value: adherence,
+                      min: 0,
+                      max: 100,
+                      divisions: 20,
+                      label: adherence.round().toString(),
+                      onChanged: (value) {
+                        setModalState(() => adherence = value);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            child: const Text('Guardar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -610,9 +726,9 @@ class _DashboardPageState extends State<DashboardPage> {
       hydrationLiters: (item['hydration_liters'] as num?)?.toInt() ?? 3,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nutricion actualizada.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Nutricion actualizada.')));
     _refreshDashboard();
   }
 
@@ -671,21 +787,22 @@ class _DashboardPageState extends State<DashboardPage> {
 
     await const ActivityHistoryApiService().updateBodyMetric(
       id: item['id'] as int,
-      weightKg: double.tryParse(weightController.text.replaceAll(',', '.')) ??
+      weightKg:
+          double.tryParse(weightController.text.replaceAll(',', '.')) ??
           ((item['weight_kg'] as num?)?.toDouble() ?? 0),
       waistCm: double.tryParse(waistController.text.replaceAll(',', '.')),
     );
     weightController.dispose();
     waistController.dispose();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Check-in actualizado.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Check-in actualizado.')));
     _refreshDashboard();
   }
 
   Future<void> _openQuickWorkoutLog(_DashboardViewModel data) async {
-    String energyLevel = 'Media';
+    String energyLevel = _energyRouteOptions[1].value;
     int duration = 45;
     final focusController = TextEditingController(
       text: _suggestedWorkoutFocus(data.preferences.coachingStyle),
@@ -695,79 +812,126 @@ class _DashboardPageState extends State<DashboardPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final selectedEnergy = _energyRouteOptions.firstWhere(
+              (option) => option.value == energyLevel,
+              orElse: () => _energyRouteOptions[1],
+            );
             return _BottomSheetFrame(
               child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                20 + MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Registrar entrenamiento',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Solo necesitamos foco, duracion y energia percibida.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: focusController,
-                    decoration: const InputDecoration(labelText: 'Foco principal'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    initialValue: duration,
-                    decoration: const InputDecoration(labelText: 'Duracion'),
-                    items: const [
-                      DropdownMenuItem(value: 20, child: Text('20 min')),
-                      DropdownMenuItem(value: 30, child: Text('30 min')),
-                      DropdownMenuItem(value: 45, child: Text('45 min')),
-                      DropdownMenuItem(value: 60, child: Text('60 min')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        duration = value ?? 45;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: energyLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Energia percibida',
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RouteSheetHeader(
+                      title: 'Registrar entrenamiento',
+                      subtitle:
+                          'Cierra rapido tu sesion con foco, duracion y energia percibida.',
+                      icon: Icons.fitness_center_rounded,
+                      onClose: () => Navigator.of(sheetContext).pop(false),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-                      DropdownMenuItem(value: 'Media', child: Text('Media')),
-                      DropdownMenuItem(value: 'Baja', child: Text('Baja')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        energyLevel = value ?? 'Media';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Guardar entrenamiento'),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: focusController,
+                      decoration: const InputDecoration(
+                        labelText: 'Foco principal',
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _focusQuickOptions
+                          .map(
+                            (option) => _HintPill(
+                              label: option,
+                              color: const Color(0xFFE8EFE8),
+                              onTap: () {
+                                focusController.text = option;
+                                setModalState(() {});
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    _SectionTitleMini('¿Cuánto duró tu sesión?'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: _durationRouteOptions
+                          .map(
+                            (option) => _CompactChoicePill(
+                              label: '$option min',
+                              selected: duration == option,
+                              onTap: () {
+                                setModalState(() => duration = option);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    _SectionTitleMini('¿Cómo terminaste de energía?'),
+                    const SizedBox(height: 10),
+                    Column(
+                      children: _energyRouteOptions
+                          .map(
+                            (option) => _ChoicePill(
+                              label: option.title,
+                              description: option.description,
+                              selected: energyLevel == option.value,
+                              onTap: () {
+                                setModalState(() => energyLevel = option.value);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    _MetricPreviewCard(
+                      title: 'Resumen rapido',
+                      value: '$duration min · ${selectedEnergy.title}',
+                      helper:
+                          'Guardaremos este cierre como lectura rapida del entrenamiento de hoy.',
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                            ),
+                            label: const Text('Guardar entrenamiento'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
             );
           },
         );
@@ -813,88 +977,121 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _openQuickNutritionLog() async {
     double adherence = 85;
-    String mealLabel = 'Dia estructurado';
+    String mealLabel = _nutritionRouteOptions.first.value;
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final selected = _nutritionRouteOptions.firstWhere(
+              (option) => option.value == mealLabel,
+              orElse: () => _nutritionRouteOptions.first,
+            );
             return _BottomSheetFrame(
               child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                20 + MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Registrar nutricion',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Describe tu tipo de dia y que tan bien seguiste tu estructura.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: mealLabel,
-                    decoration: const InputDecoration(labelText: 'Tipo de dia'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Dia estructurado',
-                        child: Text('Dia estructurado'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Dia flexible',
-                        child: Text('Dia flexible'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Dia social',
-                        child: Text('Dia social'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        mealLabel = value ?? 'Dia estructurado';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Adherencia estimada: ${adherence.round()}%',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  Slider(
-                    value: adherence,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: adherence.round().toString(),
-                    onChanged: (value) {
-                      setModalState(() {
-                        adherence = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Guardar nutricion'),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RouteSheetHeader(
+                      title: 'Registrar nutricion',
+                      subtitle:
+                          'Resume tu dia en segundos: tipo de dia, adherencia y que tan cerca estuviste del plan.',
+                      icon: Icons.restaurant_menu_rounded,
+                      onClose: () => Navigator.of(sheetContext).pop(false),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 18),
+                    _SectionTitleMini('¿Cuál describe mejor tu día de comida?'),
+                    const SizedBox(height: 10),
+                    Column(
+                      children: _nutritionRouteOptions
+                          .map(
+                            (option) => _ChoicePill(
+                              label: option.title,
+                              description: option.description,
+                              selected: mealLabel == option.value,
+                              onTap: () {
+                                setModalState(() => mealLabel = option.value);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    _MetricPreviewCard(
+                      title: 'Adherencia estimada',
+                      value: '${adherence.round()}%',
+                      helper:
+                          '${selected.title}. Piensa en porciones, elecciones y consistencia con lo planeado.',
+                    ),
+                    Slider(
+                      value: adherence,
+                      min: 0,
+                      max: 100,
+                      divisions: 20,
+                      label: adherence.round().toString(),
+                      onChanged: (value) {
+                        setModalState(() {
+                          adherence = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: const [
+                        _HintPill(
+                          label: 'Casi igual al plan',
+                          color: Color(0xFFDCEBE4),
+                        ),
+                        _HintPill(
+                          label: 'Cambios razonables',
+                          color: Color(0xFFFFE7BE),
+                        ),
+                        _HintPill(
+                          label: 'Fuera o social',
+                          color: Color(0xFFE8E4F4),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                            ),
+                            label: const Text('Guardar nutricion'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
             );
           },
         );
@@ -938,62 +1135,113 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _openQuickWeightLog() async {
     final weightController = TextEditingController();
     final waistController = TextEditingController();
+    String weighMoment = 'En ayunas';
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
-        return _BottomSheetFrame(
-          child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            20,
-            20,
-            20 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Registrar check-in corporal',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Guarda tu peso y una referencia opcional para seguir el progreso.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: weightController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return _BottomSheetFrame(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(context).viewInsets.bottom,
                 ),
-                decoration: const InputDecoration(labelText: 'Peso actual'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: waistController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RouteSheetHeader(
+                      title: 'Registrar check-in corporal',
+                      subtitle:
+                          'Guarda una referencia rapida de tu cuerpo para seguir tendencia y recuperacion.',
+                      icon: Icons.monitor_weight_rounded,
+                      onClose: () => Navigator.of(sheetContext).pop(false),
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: weightController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Peso actual',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: waistController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Cintura (opcional)',
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _SectionTitleMini('¿Cuándo te mediste?'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: ['En ayunas', 'Después de comer', 'En la noche']
+                          .map(
+                            (option) => _CompactChoicePill(
+                              label: option,
+                              selected: weighMoment == option,
+                              onTap: () {
+                                setModalState(() => weighMoment = option);
+                              },
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    _MetricPreviewCard(
+                      title: 'Consejo',
+                      value: weighMoment,
+                      helper:
+                          'Procura pesarte en condiciones parecidas para leer mejor la tendencia semanal.',
+                    ),
+                    const SizedBox(height: 16),
+                    const _HintPillRow(
+                      labels: ['Peso', 'Cintura opcional', 'Tendencia semanal'],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                            ),
+                            label: const Text('Guardar check-in'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Cintura (opcional)',
-                ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Guardar check-in'),
-                ),
-              ),
-            ],
-          ),
-        ),
+            );
+          },
         );
       },
     );
@@ -1011,9 +1259,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (weight == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresa un peso valido.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ingresa un peso valido.')));
       return;
     }
 
@@ -1060,11 +1308,7 @@ class _DashboardPageState extends State<DashboardPage> {
         final hasProfile = data?.hasProfile ?? false;
         final todayStatus =
             data?.todayStatus ??
-            const {
-              'workout': false,
-              'nutrition': false,
-              'weight': false,
-            };
+            const {'workout': false, 'nutrition': false, 'weight': false};
         final recentWorkout = _firstMap(history?['workouts'] as List<dynamic>?);
         final recentNutrition = _firstMap(
           history?['nutrition_logs'] as List<dynamic>?,
@@ -1072,7 +1316,9 @@ class _DashboardPageState extends State<DashboardPage> {
         final recentMetric = _firstMap(
           history?['body_metrics'] as List<dynamic>?,
         );
-        final completedTodayCount = todayStatus.values.where((done) => done).length;
+        final completedTodayCount = todayStatus.values
+            .where((done) => done)
+            .length;
         final dayCompletion = completedTodayCount / 3;
 
         return Scaffold(
@@ -1089,7 +1335,11 @@ class _DashboardPageState extends State<DashboardPage> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(36),
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF173836), Color(0xFF2F6E67), Color(0xFFCF9B57)],
+                      colors: [
+                        Color(0xFF173836),
+                        Color(0xFF2F6E67),
+                        Color(0xFFCF9B57),
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -1110,7 +1360,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             onTap: _showProfileImageSheet,
                             child: CircleAvatar(
                               radius: 27,
-                              backgroundColor: Colors.white.withValues(alpha: 0.16),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.16,
+                              ),
                               backgroundImage: _profileImagePath != null
                                   ? FileImage(File(_profileImagePath!))
                                   : null,
@@ -1135,10 +1387,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                   (data?.fullName.isNotEmpty == true)
                                       ? 'Hola, ${_firstName(data!.fullName)}'
                                       : 'Hola',
-                                  style: theme.textTheme.headlineMedium?.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 30,
-                                  ),
+                                  style: theme.textTheme.headlineMedium
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 30,
+                                      ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -1150,6 +1403,11 @@ class _DashboardPageState extends State<DashboardPage> {
                               ],
                             ),
                           ),
+                          // T-10 — Streak badge
+                          if ((progress?['streak_days'] as int? ?? 0) > 0)
+                            _StreakBadge(
+                              streakDays: progress!['streak_days'] as int,
+                            ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -1159,7 +1417,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             icon: Icons.auto_awesome_rounded,
                             label: 'Mi Plan',
                             color: const Color(0xFF2A6A65),
-                            onTap: () => Navigator.of(context).pushNamed('/plan-generation'),
+                            onTap: () => Navigator.of(
+                              context,
+                            ).pushNamed('/plan-generation'),
                           ),
                           const SizedBox(width: 8),
                           _HeaderActionChip(
@@ -1173,7 +1433,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             icon: Icons.tune_rounded,
                             label: 'Ajustes',
                             color: const Color(0xFF7C3AED),
-                            onTap: () => Navigator.of(context).pushNamed('/profile'),
+                            onTap: () =>
+                                Navigator.of(context).pushNamed('/profile'),
                           ),
                         ],
                       ),
@@ -1201,16 +1462,14 @@ class _DashboardPageState extends State<DashboardPage> {
                                       (data?.fullName.isNotEmpty == true)
                                           ? data!.fullName
                                           : 'Coach',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        color: Colors.white,
-                                      ),
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(color: Colors.white),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       'Abre tu perfil para ajustar preferencias, objetivos y recordatorios.',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: Colors.white70,
-                                      ),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(color: Colors.white70),
                                     ),
                                   ],
                                 ),
@@ -1228,6 +1487,18 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(height: 18),
+                // T-09 — Adherence score row
+                _AdherenceMetricsRow(progress: progress),
+                const SizedBox(height: 12),
+                // T-11 — AI Insights panel
+                if ((progress?['insights'] as List<dynamic>? ?? []).isNotEmpty)
+                  _InsightsPanel(
+                    insights: (progress!['insights'] as List<dynamic>)
+                        .map((item) => Map<String, dynamic>.from(item as Map))
+                        .toList(),
+                  ),
+                if ((progress?['insights'] as List<dynamic>? ?? []).isNotEmpty)
+                  const SizedBox(height: 18),
                 Text('Tu plan de hoy', style: theme.textTheme.headlineLarge),
                 const SizedBox(height: 12),
                 _PrimaryActionCard(
@@ -1249,8 +1520,8 @@ class _DashboardPageState extends State<DashboardPage> {
                           }
                           if (todayStatus['weight'] != true) {
                             _openQuickWeightLog();
-                        }
-                      },
+                          }
+                        },
                 ),
                 const SizedBox(height: 14),
                 _InteractiveFeatureStrip(
@@ -1306,6 +1577,13 @@ class _DashboardPageState extends State<DashboardPage> {
                         Navigator.of(context).pushNamed('/profile');
                       },
                     ),
+                    _QuickActionChip(
+                      label: 'Mis tendencias',
+                      icon: Icons.trending_up_rounded,
+                      onTap: () {
+                        Navigator.of(context).pushNamed('/progress');
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -1317,7 +1595,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   subtitle: todayStatus['workout'] == true
                       ? 'Ya registraste tu sesion. Si cambiaste algo, puedes editar el ultimo workout.'
                       : 'Abre el cierre guiado y marca bloques, energia, esfuerzo y tecnica.',
-                  statusLabel: todayStatus['workout'] == true ? 'Completado' : 'Pendiente',
+                  statusLabel: todayStatus['workout'] == true
+                      ? 'Completado'
+                      : 'Pendiente',
                   icon: Icons.fitness_center_rounded,
                   complete: todayStatus['workout'] == true,
                   busy: _isQuickLoggingWorkout,
@@ -1333,7 +1613,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   subtitle: todayStatus['nutrition'] == true
                       ? 'Tu adherencia de hoy ya quedo guardada.'
                       : 'Registra hambre, saciedad, sustituciones y como resolviste la comida.',
-                  statusLabel: todayStatus['nutrition'] == true ? 'Completado' : 'Pendiente',
+                  statusLabel: todayStatus['nutrition'] == true
+                      ? 'Completado'
+                      : 'Pendiente',
                   icon: Icons.restaurant_menu_rounded,
                   complete: todayStatus['nutrition'] == true,
                   busy: _isQuickLoggingNutrition,
@@ -1349,7 +1631,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   subtitle: todayStatus['weight'] == true
                       ? 'Tu peso o metrica de hoy ya fue registrada.'
                       : 'Elige un check-in rapido: peso, composicion o recuperacion.',
-                  statusLabel: todayStatus['weight'] == true ? 'Completado' : 'Pendiente',
+                  statusLabel: todayStatus['weight'] == true
+                      ? 'Completado'
+                      : 'Pendiente',
                   icon: Icons.monitor_weight_rounded,
                   complete: todayStatus['weight'] == true,
                   busy: _isQuickLoggingWeight,
@@ -1429,6 +1713,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       data?.summary['nutrition_focus']?.toString() ??
                       'Agregaremos lineamientos nutricionales despues del onboarding.',
                   color: const Color(0xFFF0E5D2),
+                  chips:
+                      ((data?.plan['macro_focus'] as List<dynamic>?) ??
+                              const <dynamic>[])
+                          .map((item) => item.toString())
+                          .toList(),
                   actionLabel: 'Ver',
                   onAction: data == null ? null : _openQuickNutritionLog,
                 ),
@@ -1466,6 +1755,9 @@ class _DashboardPageState extends State<DashboardPage> {
                       : '${recentMetric['weight_kg'] ?? '--'} kg · ${_dateOnly(recentMetric['recorded_at'])}',
                   color: const Color(0xFFE6DFEC),
                   actionLabel: recentMetric == null ? null : 'Editar',
+                  trailing: _WeightTrendIndicator(
+                    weightTrend: progress?['weight_trend']?.toString(),
+                  ),
                   onAction: recentMetric == null
                       ? null
                       : () => _editRecentWeight(recentMetric),
@@ -1632,6 +1924,274 @@ class _BottomSheetFrame extends StatelessWidget {
   }
 }
 
+class _RouteSheetHeader extends StatelessWidget {
+  const _RouteSheetHeader({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.onClose,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, color: const Color(0xFF143C3A)),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
+        if (onClose != null) ...[
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: onClose,
+            icon: const Icon(Icons.close_rounded),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF143C3A),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SectionTitleMini extends StatelessWidget {
+  const _SectionTitleMini(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w800,
+        color: const Color(0xFF143C3A),
+      ),
+    );
+  }
+}
+
+class _ChoicePill extends StatelessWidget {
+  const _ChoicePill({
+    required this.label,
+    required this.description,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String description;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF143C3A) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? const Color(0xFF143C3A) : const Color(0xFFD9DDD8),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: selected ? Colors.white : const Color(0xFF143C3A),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: selected ? Colors.white : const Color(0xFF143C3A),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: selected ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactChoicePill extends StatelessWidget {
+  const _CompactChoicePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF143C3A) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? const Color(0xFF143C3A) : const Color(0xFFD9DDD8),
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: selected ? Colors.white : const Color(0xFF143C3A),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricPreviewCard extends StatelessWidget {
+  const _MetricPreviewCard({
+    required this.title,
+    required this.value,
+    required this.helper,
+  });
+
+  final String title;
+  final String value;
+  final String helper;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E5DE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: const Color(0xFF143C3A),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(value, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          Text(helper, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _HintPill extends StatelessWidget {
+  const _HintPill({required this.label, required this.color, this.onTap});
+
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF143C3A),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HintPillRow extends StatelessWidget {
+  const _HintPillRow({required this.labels});
+
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: labels
+          .map(
+            (label) => _HintPill(label: label, color: const Color(0xFFE8EFE8)),
+          )
+          .toList(),
+    );
+  }
+}
+
 class _PrimaryActionCard extends StatelessWidget {
   const _PrimaryActionCard({
     required this.eyebrow,
@@ -1686,9 +2246,15 @@ class _PrimaryActionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.headlineMedium),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
                     const SizedBox(height: 8),
-                    Text(description, style: Theme.of(context).textTheme.bodyLarge),
+                    Text(
+                      description,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
                   ],
                 ),
               ),
@@ -1743,9 +2309,9 @@ class _PulseTile extends StatelessWidget {
         children: [
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: const Color(0xFF143C3A),
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: const Color(0xFF143C3A)),
           ),
           const SizedBox(height: 6),
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
@@ -1820,84 +2386,114 @@ class _TodayStepCard extends StatelessWidget {
         onTap: busy ? null : effectiveTap,
         borderRadius: BorderRadius.circular(28),
         child: Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: complete
-              ? const [Color(0xFFDCEBE4), Color(0xFFF4F0E8)]
-              : const [Colors.white, Color(0xFFF7F2E9)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: complete ? const Color(0xFF8FB9A7) : const Color(0xFFD8DCD5),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: complete
+                  ? const [Color(0xFFDCEBE4), Color(0xFFF4F0E8)]
+                  : const [Colors.white, Color(0xFFF8F3EA)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
               color: complete
-                  ? const Color(0xFF2A6A65)
-                  : const Color(0xFF143C3A).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
+                  ? const Color(0xFF8FB9A7)
+                  : const Color(0xFFD8DCD5),
             ),
-            alignment: Alignment.center,
-            child: Icon(
-              complete ? Icons.check_rounded : icon,
-              color: complete ? Colors.white : const Color(0xFF143C3A),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  stepLabel,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: complete
-                      ? const Color(0xFF2A6A65).withValues(alpha: 0.12)
-                      : const Color(0xFF143C3A).withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  busy ? 'Guardando...' : statusLabel,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF143C3A),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: busy ? null : (complete ? (onEditTap ?? onTap) : onTap),
-                child: Text(complete ? 'Actualizar' : 'Registrar'),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF143C3A).withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: complete
+                      ? const Color(0xFF2A6A65)
+                      : const Color(0xFF143C3A).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  complete ? Icons.check_rounded : icon,
+                  color: complete ? Colors.white : const Color(0xFF143C3A),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        stepLabel,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF143C3A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: complete
+                          ? const Color(0xFF2A6A65).withValues(alpha: 0.12)
+                          : const Color(0xFF143C3A).withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      busy ? 'Guardando...' : statusLabel,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: complete
+                            ? const Color(0xFF2A6A65)
+                            : const Color(0xFF143C3A),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: busy
+                        ? null
+                        : (complete ? (onEditTap ?? onTap) : onTap),
+                    child: Text(complete ? 'Actualizar' : 'Registrar'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1956,10 +2552,7 @@ class _ChecklistCard extends StatelessWidget {
 }
 
 class _ChecklistItemData {
-  const _ChecklistItemData({
-    required this.label,
-    required this.complete,
-  });
+  const _ChecklistItemData({required this.label, required this.complete});
 
   final String label;
   final bool complete;
@@ -1997,16 +2590,16 @@ class _DayProgressCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Progreso del dia',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: Colors.white),
                 ),
               ),
               Text(
                 '$percent%',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.headlineMedium?.copyWith(color: Colors.white),
               ),
             ],
           ),
@@ -2023,9 +2616,9 @@ class _DayProgressCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             '$completedCount de $totalCount acciones clave registradas hoy.',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.white70,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: Colors.white70),
           ),
         ],
       ),
@@ -2077,14 +2670,18 @@ class _InteractiveFeatureStrip extends StatelessWidget {
     required this.title,
     required this.description,
     required this.color,
+    this.chips = const [],
     this.actionLabel,
+    this.trailing,
     this.onAction,
   });
 
   final String title;
   final String description;
   final Color color;
+  final List<String> chips;
   final String? actionLabel;
+  final Widget? trailing;
   final VoidCallback? onAction;
 
   @override
@@ -2120,11 +2717,9 @@ class _InteractiveFeatureStrip extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
+                  if (trailing != null) trailing!,
                   if (actionLabel != null && onAction != null)
-                    TextButton(
-                      onPressed: onAction,
-                      child: Text(actionLabel!),
-                    ),
+                    TextButton(onPressed: onAction, child: Text(actionLabel!)),
                   if (onAction != null)
                     const Icon(
                       Icons.chevron_right_rounded,
@@ -2134,12 +2729,55 @@ class _InteractiveFeatureStrip extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(description, style: Theme.of(context).textTheme.bodyLarge),
+              if (chips.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: chips
+                      .map(
+                        (chip) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _macroFocusChipColor(chip),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            chip,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF143C3A),
+                                ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
+
+Color _macroFocusChipColor(String label) {
+  final value = label.toLowerCase();
+  if (value.contains('prote')) {
+    return const Color(0xFFDCE9FF);
+  }
+  if (value.contains('carb')) {
+    return const Color(0xFFFFE7BE);
+  }
+  if (value.contains('gras') || value.contains('saciedad')) {
+    return const Color(0xFFDCEEDC);
+  }
+  return const Color(0xFFE8E4F4);
 }
 
 String _suggestedWorkoutFocus(String style) {
@@ -2261,4 +2899,432 @@ String _dailyFocusActionLabel(Map<String, bool> todayStatus) {
     return 'Guardar check-in';
   }
   return 'Todo al dia';
+}
+
+// ─── T-09: Adherence Metrics Row ───────────────────────────────────────────────
+
+class _AdherenceMetricsRow extends StatelessWidget {
+  final Map<String, dynamic>? progress;
+
+  const _AdherenceMetricsRow({this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final weeklyAdherence = (progress?['weekly_adherence'] as num?)?.toInt() ?? 0;
+    final completedSessions = (progress?['completed_sessions'] as num?)?.toInt() ?? 0;
+    final workoutCompletionRate = (progress?['workout_completion_rate'] as num?)?.toInt() ?? 0;
+
+    final adherenceColor = weeklyAdherence >= 80
+        ? const Color(0xFF2E7D52)
+        : weeklyAdherence >= 50
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFFEF5350);
+
+    return Row(
+      children: [
+        Expanded(
+          child: _MetricChip(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CircularProgressIndicator(
+                        value: weeklyAdherence / 100,
+                        strokeWidth: 4,
+                        backgroundColor: Colors.black12,
+                        valueColor: AlwaysStoppedAnimation<Color>(adherenceColor),
+                      ),
+                      Center(
+                        child: Text(
+                          '$weeklyAdherence',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: adherenceColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Adherencia',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _MetricChip(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.fitness_center,
+                  size: 24,
+                  color: Color(0xFF143C3A),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$completedSessions',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF143C3A),
+                  ),
+                ),
+                const Text(
+                  'Sesiones',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _MetricChip(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '$workoutCompletionRate%',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF143C3A),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: workoutCompletionRate / 100,
+                    minHeight: 5,
+                    backgroundColor: Colors.black12,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF143C3A),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Workout rate',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetricChip extends StatelessWidget {
+  final Widget child;
+
+  const _MetricChip({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE0E5DE)),
+      ),
+      child: child,
+    );
+  }
+}
+
+// ─── T-10: Streak Badge ─────────────────────────────────────────────────────────
+
+class _StreakBadge extends StatefulWidget {
+  final int streakDays;
+
+  const _StreakBadge({required this.streakDays});
+
+  @override
+  State<_StreakBadge> createState() => _StreakBadgeState();
+}
+
+class _StreakBadgeState extends State<_StreakBadge> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) setState(() => _visible = true);
+    });
+  }
+
+  String get _motivationalMessage {
+    if (widget.streakDays >= 30) return '¡Leyenda!';
+    if (widget.streakDays >= 14) return '¡Racha increíble!';
+    if (widget.streakDays >= 7) return '¡Una semana seguida!';
+    return '¡Vas bien!';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _visible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 600),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF6B35).withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFFFF6B35).withValues(alpha: 0.4),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '🔥 ${widget.streakDays} días',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+            Text(
+              _motivationalMessage,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── T-11: AI Insights Panel ────────────────────────────────────────────────────
+
+class _InsightsPanel extends StatefulWidget {
+  final List<Map<String, dynamic>> insights;
+
+  const _InsightsPanel({required this.insights});
+
+  @override
+  State<_InsightsPanel> createState() => _InsightsPanelState();
+}
+
+class _InsightsPanelState extends State<_InsightsPanel> {
+  final PageController _controller = PageController(viewportFraction: 0.88);
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleInsights = widget.insights.take(3).toList();
+    if (visibleInsights.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '💡 Insights de tu coach',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 120,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: visibleInsights.length,
+            onPageChanged: (page) => setState(() => _currentPage = page),
+            itemBuilder: (context, index) {
+              final insight = visibleInsights[index];
+              final title = insight['title']?.toString() ?? '';
+              final note = insight['note']?.toString() ?? '';
+              final action = insight['action']?.toString();
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                    border: Border.all(color: const Color(0xFFE8EFE8)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE7F4EE),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.lightbulb_outline,
+                          color: Color(0xFF2E7D52),
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (title.isNotEmpty)
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            if (note.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                note,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                  height: 1.3,
+                                ),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            if (action != null && action.isNotEmpty) ...[
+                              const Spacer(),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 24),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {},
+                                child: const Text('Ver'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (visibleInsights.length > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              visibleInsights.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: _currentPage == index ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _currentPage == index
+                      ? const Color(0xFF143C3A)
+                      : Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─── T-15: Weight Trend Indicator ──────────────────────────────────────────────
+
+class _WeightTrendIndicator extends StatelessWidget {
+  final String? weightTrend;
+
+  const _WeightTrendIndicator({this.weightTrend});
+
+  @override
+  Widget build(BuildContext context) {
+    if (weightTrend == null || weightTrend!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final trend = weightTrend!.toLowerCase();
+    final bool isUp = trend.contains('subida') || trend.contains('up');
+    final bool isDown = trend.contains('bajada') || trend.contains('down');
+
+    if (!isUp && !isDown) {
+      // stable
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.trending_flat, color: Colors.grey, size: 20),
+          const SizedBox(height: 2),
+          const Text(
+            'Tendencia esta semana',
+            style: TextStyle(fontSize: 10, color: Colors.black45),
+          ),
+        ],
+      );
+    }
+
+    final color = isUp ? const Color(0xFFEF5350) : const Color(0xFF2E7D52);
+    final icon = isUp ? Icons.trending_up : Icons.trending_down;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 2),
+        const Text(
+          'Tendencia esta semana',
+          style: TextStyle(fontSize: 10, color: Colors.black45),
+        ),
+      ],
+    );
+  }
 }

@@ -621,6 +621,14 @@ class _ProgressPageState extends State<ProgressPage> {
               label: 'Sesiones / meta',
             ),
             const SizedBox(height: 20),
+            // ── T-17 — Tendencias semanales ─────────────────────────────────
+            const AppSectionTitle(
+              title: 'Mis Tendencias',
+              subtitle: 'Ultimos 7 dias — adherencia, sesiones y peso.',
+            ),
+            const SizedBox(height: 12),
+            _WeeklyTrendsSection(history: history),
+            const SizedBox(height: 20),
             AppSurfaceCard(
               backgroundColor: const Color(0xFFF5ECDD),
               child: Column(
@@ -998,4 +1006,312 @@ String _comparisonText(String label, dynamic latest, dynamic previous, String su
     return '$label: estable en ${latestValue.toStringAsFixed(1)} $suffix';
   }
   return '$label: ${latestValue.toStringAsFixed(1)} $suffix ($direction $suffix vs registro anterior)';
+}
+
+// ─── T-17 — Sección de tendencias semanales ───────────────────────────────────
+
+class _WeeklyTrendsSection extends StatelessWidget {
+  const _WeeklyTrendsSection({required this.history});
+
+  final Map<String, dynamic>? history;
+
+  static const _dayLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+  List<Map<String, dynamic>> _buildNutritionPoints() {
+    final logs = (history?['nutrition_logs'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+    final today = DateTime.now();
+    final points = <Map<String, dynamic>>[];
+    for (var i = 6; i >= 0; i--) {
+      final day = today.subtract(Duration(days: i));
+      final iso = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final dayLogs = logs.where((e) {
+        final loggedAt = e['logged_at']?.toString() ?? '';
+        return loggedAt.startsWith(iso);
+      }).toList();
+      double adherence = 0;
+      if (dayLogs.isNotEmpty) {
+        final sum = dayLogs.fold<double>(
+          0,
+          (acc, log) => acc + ((log['adherence_score'] as num?)?.toDouble() ?? 0),
+        );
+        adherence = sum / dayLogs.length;
+      }
+      final weekdayIndex = day.weekday - 1; // Mon=0 .. Sun=6
+      points.add({'label': _dayLabels[weekdayIndex], 'value': adherence});
+    }
+    return points;
+  }
+
+  List<Map<String, dynamic>> _buildWorkoutPoints() {
+    final workouts = (history?['workouts'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+    final today = DateTime.now();
+    final points = <Map<String, dynamic>>[];
+    for (var i = 6; i >= 0; i--) {
+      final day = today.subtract(Duration(days: i));
+      final iso = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final hasSession = workouts.any((e) {
+        final completedAt = e['completed_at']?.toString() ?? '';
+        return completedAt.startsWith(iso);
+      });
+      final weekdayIndex = day.weekday - 1;
+      points.add({'label': _dayLabels[weekdayIndex], 'value': hasSession ? 1.0 : 0.0});
+    }
+    return points;
+  }
+
+  List<Map<String, dynamic>> _buildWeightPoints() {
+    final metrics = (history?['body_metrics'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .where((e) => e['weight_kg'] != null)
+        .toList();
+    final today = DateTime.now();
+    final points = <Map<String, dynamic>>[];
+    for (var i = 6; i >= 0; i--) {
+      final day = today.subtract(Duration(days: i));
+      final iso = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final dayMetric = metrics.firstWhere(
+        (e) => (e['recorded_at']?.toString() ?? '').startsWith(iso),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (dayMetric.isNotEmpty) {
+        final weekdayIndex = day.weekday - 1;
+        points.add({
+          'label': _dayLabels[weekdayIndex],
+          'value': (dayMetric['weight_kg'] as num).toDouble(),
+        });
+      }
+    }
+    return points;
+  }
+
+  Color _adherenceBarColor(double value) {
+    if (value >= 80) return const Color(0xFF2E7D52);
+    if (value >= 50) return const Color(0xFFF59E0B);
+    return const Color(0xFFDC2626);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nutritionPoints = _buildNutritionPoints();
+    final workoutPoints = _buildWorkoutPoints();
+    final weightPoints = _buildWeightPoints();
+    final hasWeightData = weightPoints.length >= 2;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Adherencia nutricional ──
+        AppSurfaceCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Adherencia nutricional — 7 dias',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Verde ≥80 · Ambar 50–79 · Rojo <50',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 120,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: nutritionPoints.map((entry) {
+                    final value = (entry['value'] as num?)?.toDouble() ?? 0;
+                    final label = entry['label']?.toString() ?? '';
+                    final factor = value <= 0 ? 0.05 : (value / 100).clamp(0.05, 1.0);
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              value > 0 ? '${value.round()}%' : '',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              height: 84 * factor,
+                              decoration: BoxDecoration(
+                                color: _adherenceBarColor(value),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              label,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ── Sesiones de workout ──
+        AppSurfaceCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sesiones completadas',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 100,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: workoutPoints.map((entry) {
+                    final value = (entry['value'] as num?)?.toDouble() ?? 0;
+                    final label = entry['label']?.toString() ?? '';
+                    final hasSession = value >= 1;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              height: hasSession ? 64 : 10,
+                              decoration: BoxDecoration(
+                                color: hasSession
+                                    ? const Color(0xFF0D9488)
+                                    : const Color(0xFFD1D5DB),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              label,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ── Peso ──
+        AppSurfaceCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Registro de peso (kg)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (!hasWeightData)
+                Text(
+                  'Registra tu peso diariamente para ver la tendencia.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.black54,
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 120,
+                  child: CustomPaint(
+                    painter: _WeightLinePainter(points: weightPoints),
+                    size: Size.infinite,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeightLinePainter extends CustomPainter {
+  const _WeightLinePainter({required this.points});
+
+  final List<Map<String, dynamic>> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+
+    final values = points
+        .map((e) => (e['value'] as num).toDouble())
+        .toList();
+    final minVal = values.reduce((a, b) => a < b ? a : b);
+    final maxVal = values.reduce((a, b) => a > b ? a : b);
+    final range = (maxVal - minVal).clamp(0.5, double.infinity);
+
+    final linePaint = Paint()
+      ..color = const Color(0xFF2563EB)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final dotPaint = Paint()
+      ..color = const Color(0xFF2563EB)
+      ..style = PaintingStyle.fill;
+
+    final textStyle = const TextStyle(
+      color: Color(0xFF374151),
+      fontSize: 10,
+    );
+
+    final path = Path();
+    final n = points.length;
+    for (var i = 0; i < n; i++) {
+      final x = size.width * i / (n - 1);
+      final normalized = (values[i] - minVal) / range;
+      final y = size.height * 0.85 - normalized * size.height * 0.7;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+      canvas.drawCircle(Offset(x, y), 4, dotPaint);
+
+      // Label
+      final tp = TextPainter(
+        text: TextSpan(text: values[i].toStringAsFixed(1), style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(x - tp.width / 2, y - 18));
+
+      // Day label
+      final label = points[i]['label']?.toString() ?? '';
+      final tp2 = TextPainter(
+        text: TextSpan(text: label, style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp2.paint(canvas, Offset(x - tp2.width / 2, size.height - tp2.height));
+    }
+
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WeightLinePainter oldDelegate) =>
+      oldDelegate.points != points;
 }

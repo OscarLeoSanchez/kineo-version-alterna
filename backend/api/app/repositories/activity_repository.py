@@ -438,6 +438,20 @@ class ActivityRepository:
         )
         return list(self.db.scalars(statement).all())
 
+    def nutrition_logs_for_day(self, *, user_id: int, day_iso_date: str) -> list[NutritionLog]:
+        day_start = datetime.fromisoformat(day_iso_date).replace(tzinfo=UTC)
+        day_end = day_start + timedelta(days=1)
+        statement = (
+            select(NutritionLog)
+            .where(
+                NutritionLog.user_id == user_id,
+                NutritionLog.logged_at >= day_start,
+                NutritionLog.logged_at < day_end,
+            )
+            .order_by(NutritionLog.logged_at.asc(), NutritionLog.id.asc())
+        )
+        return list(self.db.scalars(statement).all())
+
     def filter_nutrition_logs(
         self,
         *,

@@ -15,6 +15,7 @@ import '../../../../shared/widgets/shimmer_box.dart';
 import '../../data/services/workout_api_service.dart';
 import '../../data/services/workout_block_api_service.dart';
 import '../../data/services/workout_log_api_service.dart';
+import '../screens/workout_session_screen.dart';
 import '../widgets/workout_detail_sheet.dart';
 import '../widgets/workout_log_confirmation_sheet.dart';
 
@@ -296,6 +297,18 @@ class _WorkoutPageState extends State<WorkoutPage>
           _isSubmitting = false;
         });
       }
+    }
+  }
+
+  Future<void> _openGuidedSession(Map<String, dynamic>? selectedDay) async {
+    if (selectedDay == null) return;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => WorkoutSessionScreen(workoutDay: selectedDay),
+      ),
+    );
+    if (result == true) {
+      await _refreshSilently();
     }
   }
 
@@ -907,10 +920,13 @@ class _WorkoutPageState extends State<WorkoutPage>
                   preferences.units,
                 ),
               ),
-              _HeroChip(
-                label:
-                    'Energia ${selectedDay?['intensity']?.toString() ?? data?['energy_level']?.toString() ?? '--'}',
-              ),
+              // T-07 — intensity chip with color coding
+              if ((selectedDay?['intensity']?.toString() ?? data?['intensity']?.toString() ?? '').isNotEmpty)
+                _IntensityChip(
+                  intensity: selectedDay?['intensity']?.toString() ??
+                      data?['intensity']?.toString() ??
+                      '',
+                ),
               _HeroChip(
                 label: completedToday
                     ? 'Dia con registro'
@@ -936,6 +952,19 @@ class _WorkoutPageState extends State<WorkoutPage>
     ProfilePreferences preferences,
     Map<String, dynamic>? selectedDay,
   ) {
+    // T-05 — parse warmup and cooldown
+    final warmup = (selectedDay?['warmup'] as List?)
+        ?.map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList() ?? const <String>[];
+    final cooldown = (selectedDay?['cooldown'] as List?)
+        ?.map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList() ?? const <String>[];
+
+    // T-06 — parse adaptation_hint
+    final adaptationHint = selectedDay?['adaptation_hint']?.toString() ?? '';
+
     return AppSurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -950,6 +979,113 @@ class _WorkoutPageState extends State<WorkoutPage>
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: selectedDay == null || selectedDay['is_today'] != true
+                  ? null
+                  : () => _openGuidedSession(selectedDay),
+              icon: const Icon(Icons.timer_outlined),
+              label: const Text('Iniciar modo guiado'),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // T-06 — Coach adaptation hint card
+          if (adaptationHint.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1A4A47), Color(0xFF0F2E2C)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(
+                        Icons.psychology_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Coach del día',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    adaptationHint,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // T-05 — Warmup expandable section
+          if (warmup.isNotEmpty) ...[
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: const Border(
+                    left: BorderSide(color: Colors.orange, width: 3),
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  title: const Text(
+                    '🔥 Calentamiento',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  initiallyExpanded: false,
+                  children: warmup
+                      .map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 5, right: 8),
+                                child: Icon(
+                                  Icons.fiber_manual_record,
+                                  size: 8,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                              Expanded(child: Text(item)),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           if (blocks.isEmpty)
             Container(
               width: double.infinity,
@@ -1065,6 +1201,53 @@ class _WorkoutPageState extends State<WorkoutPage>
               ),
             );
           }),
+
+          // T-05 — Cooldown expandable section
+          if (cooldown.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Colors.lightBlue, width: 3),
+                  ),
+                ),
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  title: const Text(
+                    '💧 Vuelta a la calma',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  initiallyExpanded: false,
+                  children: cooldown
+                      .map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 5, right: 8),
+                                child: Icon(
+                                  Icons.fiber_manual_record,
+                                  size: 8,
+                                  color: Colors.lightBlue,
+                                ),
+                              ),
+                              Expanded(child: Text(item)),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1833,6 +2016,48 @@ class _HeroChip extends StatelessWidget {
         style: const TextStyle(
           color: Colors.white,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+// T-07 — Intensity chip with color coding
+class _IntensityChip extends StatelessWidget {
+  const _IntensityChip({required this.intensity});
+
+  final String intensity;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color textColor;
+    final Color bgColor;
+    final lower = intensity.toLowerCase();
+    if (lower == 'alta' || lower == 'high') {
+      textColor = Colors.red.shade700;
+      bgColor = Colors.red.shade50;
+    } else if (lower == 'moderada' || lower == 'moderate' || lower == 'media') {
+      textColor = Colors.amber.shade700;
+      bgColor = Colors.amber.shade50;
+    } else if (lower == 'baja' || lower == 'low') {
+      textColor = Colors.green.shade700;
+      bgColor = Colors.green.shade50;
+    } else {
+      textColor = Colors.grey.shade700;
+      bgColor = Colors.grey.shade100;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        intensity,
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
         ),
       ),
     );

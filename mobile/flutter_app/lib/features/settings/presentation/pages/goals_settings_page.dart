@@ -62,10 +62,15 @@ class _GoalsSettingsPageState extends State<GoalsSettingsPage> {
         remindersEnabled: _remindersEnabled,
         reminderTime: _timeController.text,
       );
-      await LocalNotificationService.instance.scheduleDailyReminder(
-        enabled: _remindersEnabled,
-        time: _timeController.text,
-      );
+      try {
+        await LocalNotificationService.instance.scheduleDailyReminder(
+          enabled: _remindersEnabled,
+          time: _timeController.text,
+        );
+      } catch (e) {
+        // Silently ignore permission errors — reminder will not be set.
+        debugPrint('Notification scheduling failed: $e');
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Objetivos actualizados.')),

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -31,6 +34,37 @@ class LocalNotificationService {
     await _plugin.cancel(1001);
     if (!enabled) return;
 
+    const notificationDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'kineo_daily',
+        'Kineo Daily',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+      ),
+      iOS: DarwinNotificationDetails(),
+    );
+
+    // On Android 12+, verify exact alarm permission before using zonedSchedule.
+    if (!kIsWeb && Platform.isAndroid) {
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      final canSchedule =
+          await androidPlugin?.canScheduleExactNotifications() ?? false;
+      if (!canSchedule) {
+        // Fallback: use periodic notification instead of exact alarm.
+        await _plugin.periodicallyShow(
+          1001,
+          'Kineo Coach',
+          'Es momento de revisar tu objetivo diario.',
+          RepeatInterval.daily,
+          notificationDetails,
+          androidScheduleMode: AndroidScheduleMode.inexact,
+        );
+        return;
+      }
+    }
+
     final parts = time.split(':');
     final hour = int.tryParse(parts.first) ?? 7;
     final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
@@ -52,15 +86,7 @@ class LocalNotificationService {
       'Kineo Coach',
       'Es momento de revisar tu objetivo diario.',
       scheduled,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'kineo_daily',
-          'Kineo Daily',
-          importance: Importance.defaultImportance,
-          priority: Priority.defaultPriority,
-        ),
-        iOS: DarwinNotificationDetails(),
-      ),
+      notificationDetails,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
       uiLocalNotificationDateInterpretation:
