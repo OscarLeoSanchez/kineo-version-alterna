@@ -2,6 +2,9 @@ class OnboardingProfile {
   const OnboardingProfile({
     required this.fullName,
     required this.age,
+    required this.birthDate,
+    required this.sex,
+    required this.genderIdentity,
     required this.heightCm,
     required this.weightKg,
     required this.goal,
@@ -22,6 +25,9 @@ class OnboardingProfile {
 
   final String fullName;
   final int age;
+  final String? birthDate;
+  final String? sex;
+  final String? genderIdentity;
   final int heightCm;
   final int weightKg;
   final String goal;
@@ -43,6 +49,9 @@ class OnboardingProfile {
     return {
       'full_name': fullName,
       'age': age,
+      'birth_date': birthDate,
+      'sex': sex,
+      'gender_identity': genderIdentity,
       'height_cm': heightCm,
       'weight_kg': weightKg,
       'goal': goal,
@@ -66,6 +75,9 @@ class OnboardingProfile {
     return OnboardingProfile(
       fullName: json['full_name']?.toString() ?? '',
       age: json['age'] as int? ?? 30,
+      birthDate: json['birth_date']?.toString(),
+      sex: json['sex']?.toString(),
+      genderIdentity: json['gender_identity']?.toString(),
       heightCm: json['height_cm'] as int? ?? 175,
       weightKg: json['weight_kg'] as int? ?? 78,
       goal: json['goal']?.toString() ?? 'Perder grasa',
@@ -91,13 +103,9 @@ class OnboardingProfile {
       restrictions: (json['restrictions'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(),
-      bodyMeasurements: (json['body_measurements'] as Map<String, dynamic>? ??
-              const {})
-          .map(
-            (key, value) => MapEntry(
-              key,
-              (value as num?)?.toDouble() ?? 0,
-            ),
+      bodyMeasurements:
+          (json['body_measurements'] as Map<String, dynamic>? ?? const {}).map(
+            (key, value) => MapEntry(key, (value as num?)?.toDouble() ?? 0),
           ),
       additionalNotes: json['additional_notes']?.toString() ?? '',
     );

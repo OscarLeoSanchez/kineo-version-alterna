@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi import Query
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -7,9 +9,9 @@ from app.db.session import get_db
 from app.repositories.activity_repository import ActivityRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.schemas.activity import (
-    ActivityHistoryRead,
     ActivityDeleteRead,
     ActivityFilterRead,
+    ActivityHistoryRead,
     ActivityLogRead,
     BodyMetricCreate,
     BodyMetricHistoryItem,
@@ -18,8 +20,18 @@ from app.schemas.activity import (
     WorkoutSessionCreate,
     WorkoutSessionHistoryItem,
 )
+from app.schemas.exercise_log import ExerciseLogCreate, ExerciseLogRead
+from app.services.exercise_log_service import ExerciseLogService
 
 router = APIRouter(prefix="/activity")
+
+
+class WorkoutBlockUpdatePayload(BaseModel):
+    plan_id: int | None = None
+    day_iso_date: str = Field(min_length=10, max_length=10)
+    block_title: str = Field(min_length=2, max_length=160)
+    completed: bool = False
+    selected_exercises: list[str] = Field(default_factory=list)
 
 
 def _profile_id(db: Session, user_id: int) -> int:
@@ -41,6 +53,23 @@ async def log_workout(
         payload=payload,
     )
     return ActivityLogRead(id=record.id, message="Sesion registrada", created_at=record.completed_at)
+
+
+@router.post("/workout-blocks", response_model=ActivityDeleteRead)
+async def save_workout_block_state(
+    payload: WorkoutBlockUpdatePayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> ActivityDeleteRead:
+    ActivityRepository(db).save_block_state(
+        user_id=current_user.id,
+        plan_id=payload.plan_id,
+        day_iso_date=payload.day_iso_date,
+        block_title=payload.block_title,
+        completed=payload.completed,
+        selected_exercises=payload.selected_exercises,
+    )
+    return ActivityDeleteRead(message="Bloque actualizado")
 
 
 @router.put("/workouts/{workout_id}", response_model=ActivityLogRead)
@@ -216,16 +245,28 @@ async def filter_activity_history(
     return ActivityFilterRead(
         filter_type=filter_type,
         limit=limit,
-        workouts=[
-            WorkoutSessionHistoryItem.model_validate(item)
-            for item in workouts
-        ],
-        nutrition_logs=[
-            NutritionHistoryItem.model_validate(item)
-            for item in nutrition_logs
-        ],
-        body_metrics=[
-            BodyMetricHistoryItem.model_validate(item)
-            for item in body_metrics
-        ],
+        workouts=[WorkoutSessionHistoryItem.model_validate(item) for item in workouts],
+        nutrition_logs=[NutritionHistoryItem.model_validate(item) for item in nutrition_logs],
+        body_metrics=[BodyMetricHistoryItem.model_validate(item) for item in body_metrics],
     )
+
+
+@router.post("/exercise-logs", response_model=ExerciseLogRead, status_code=status.HTTP_201_CREATED)
+def log_exercise_set(
+    payload: ExerciseLogCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ExerciseLogRead:
+    svc = ExerciseLogService(db)
+    return svc.log_set(current_user.id, payload.model_dump())
+
+
+@router.get("/exercise-logs", response_model=list[ExerciseLogRead])
+def get_exercise_logs(
+    day: str = Query(..., description="ISO date e.g. 2026-03-13"),
+    exercise_name: Optional[str] = Query(None),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ExerciseLogRead]:
+    svc = ExerciseLogService(db)
+    return svc.get_day_logs(current_user.id, day, exercise_name)

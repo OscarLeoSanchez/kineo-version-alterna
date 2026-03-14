@@ -1,4 +1,5 @@
-from datetime import datetime
+import json
+from datetime import UTC, datetime, timedelta
 
 from app.ai.planning_models import GeneratedProgram
 from app.core.personalization import PersonalizationContext
@@ -36,33 +37,36 @@ class ExperienceService:
         depth = self._depth_level(context.recommendation_depth)
         proactive_adjustments = context.proactive_adjustments is not False
         program = PlanService.parse_generated_program(plan)
-        todays_workout = self._workout_for_today(program)
+        self.activity_repository.sync_exercise_catalog(program=program)
+        week_start_date = self._plan_anchor_date(plan)
+        weekly_calendar = self.activity_repository.weekly_workout_calendar(
+            user_id=user_id,
+            target_per_week=profile.workout_days_per_week,
+            start_date=week_start_date,
+        )
+        weekly_days = self._build_weekly_workout_days(
+            user_id=user_id,
+            plan_id=plan.id,
+            program=program,
+            weekly_calendar=weekly_calendar,
+            catalog=self.activity_repository.exercise_catalog_map(),
+        )
+        selected_day_index = next(
+            (index for index, item in enumerate(weekly_days) if item.get("is_today") is True),
+            0,
+        )
+        todays_workout = weekly_days[selected_day_index] if weekly_days else None
         energy_level = "Media"
         blocks = []
         sos_hint = "Si aparece dolor o no tienes equipo, sustituye por una variante equivalente."
 
         if todays_workout is not None:
             blocks = [
-                {
-                    "title": block.title,
-                    "description": block.description,
-                    "time_box": block.time_box,
-                    "goal": block.goal,
-                    "exercises": [
-                        {
-                            "name": exercise.name,
-                            "sets": exercise.sets,
-                            "reps": exercise.reps,
-                            "rest": exercise.rest,
-                            "notes": exercise.notes,
-                        }
-                        for exercise in block.exercises
-                    ],
-                }
-                for block in todays_workout.blocks
+                dict(block)
+                for block in todays_workout.get("blocks", [])
             ]
-            energy_level = todays_workout.intensity
-            sos_hint = todays_workout.adaptation_hint
+            energy_level = todays_workout.get("intensity", "Media")
+            sos_hint = todays_workout.get("adaptation_hint", sos_hint)
 
         if context.coach_style == "Exigente":
             energy_level = "Alta"
@@ -157,18 +161,26 @@ class ExperienceService:
             )
 
         return WorkoutSummaryRead(
-            title=todays_workout.session_title if todays_workout is not None else f"Sesion adaptativa de {profile.session_minutes} min",
-            duration_minutes=todays_workout.duration_minutes if todays_workout is not None else profile.session_minutes,
-            focus=todays_workout.focus if todays_workout is not None else plan.workout_focus,
+            title=(
+                todays_workout.get("session_title")
+                if todays_workout is not None
+                else f"Sesion adaptativa de {profile.session_minutes} min"
+            ),
+            duration_minutes=(
+                int(todays_workout.get("duration_minutes", profile.session_minutes))
+                if todays_workout is not None
+                else profile.session_minutes
+            ),
+            focus=todays_workout.get("focus") if todays_workout is not None else plan.workout_focus,
             energy_level=energy_level,
             blocks=blocks,
             sos_hint=sos_hint,
             completed_sessions=self.activity_repository.workout_count(user_id=user_id, days=7),
             completed_today=self.activity_repository.workout_completed_today(user_id=user_id),
-            weekly_calendar=self.activity_repository.weekly_workout_calendar(
-                user_id=user_id,
-                target_per_week=profile.workout_days_per_week,
-            ),
+            selected_day_index=selected_day_index,
+            plan_id=plan.id,
+            weekly_calendar=weekly_calendar,
+            weekly_days=weekly_days,
         )
 
     def build_nutrition(
@@ -185,7 +197,18 @@ class ExperienceService:
             "1900 kcal" if "grasa" in profile.goal.lower() else "2400 kcal"
         )
         adherence_score = self.activity_repository.nutrition_average(user_id=profile.user_id or 0)
-        meals = self._build_meals_from_program(program)
+        week_start_date = self._plan_anchor_date(plan)
+        weekly_calendar = self.activity_repository.weekly_workout_calendar(
+            user_id=profile.user_id or 0,
+            target_per_week=profile.workout_days_per_week,
+            start_date=week_start_date,
+        )
+        weekly_days = self._build_weekly_nutrition_days(program, weekly_calendar)
+        selected_day_index = next(
+            (index for index, item in enumerate(weekly_days) if item.get("is_today") is True),
+            0,
+        )
+        meals = weekly_days[selected_day_index]["meals"] if weekly_days else self._build_meals_from_program(program)
         macro_focus = program.macro_focus if program is not None else ["Proteina alta", "Fibra", "Comidas simples"]
         swap_tip = plan.nutrition_summary
 
@@ -255,6 +278,9 @@ class ExperienceService:
             meals=meals,
             swap_tip=swap_tip,
             adherence_score=adherence_score,
+            selected_day_index=selected_day_index,
+            plan_id=plan.id,
+            weekly_days=weekly_days,
         )
 
     def build_progress(
@@ -349,6 +375,77 @@ class ExperienceService:
             return None
         return program.weekly_workouts[datetime.now().weekday() % len(program.weekly_workouts)]
 
+    def _build_weekly_workout_days(
+        self,
+        *,
+        user_id: int,
+        plan_id: int,
+        program: GeneratedProgram | None,
+        weekly_calendar: list[dict[str, object]],
+        catalog: dict[str, object],
+    ) -> list[dict[str, object]]:
+        days: list[dict[str, object]] = []
+        for calendar_entry in weekly_calendar:
+            weekday_index = int(calendar_entry.get("weekday_index", 0))
+            iso_date = calendar_entry.get("iso_date", "")
+            block_states = self.activity_repository.block_state_map(
+                user_id=user_id,
+                plan_id=plan_id,
+                day_iso_date=str(iso_date),
+            )
+            if program is None or not program.weekly_workouts:
+                days.append(
+                    {
+                        "day_label": calendar_entry.get("label", ""),
+                        "date": calendar_entry.get("date", ""),
+                        "iso_date": calendar_entry.get("iso_date", ""),
+                        "is_today": calendar_entry.get("is_today", False),
+                        "is_past": calendar_entry.get("is_past", False),
+                        "completed_sessions": calendar_entry.get("completed_sessions", 0),
+                        "goal_hit": calendar_entry.get("goal_hit", False),
+                        "session_title": "Sesion adaptativa",
+                        "focus": "Foco adaptativo",
+                        "objective": "",
+                        "duration_minutes": 45,
+                        "intensity": "Media",
+                        "blocks": [],
+                        "adaptation_hint": "",
+                        "plan_id": plan_id,
+                    }
+                )
+                continue
+
+            workout = program.weekly_workouts[weekday_index % len(program.weekly_workouts)]
+            days.append(
+                {
+                    "day_label": workout.day_label,
+                    "date": calendar_entry.get("date", ""),
+                    "iso_date": calendar_entry.get("iso_date", ""),
+                    "is_today": calendar_entry.get("is_today", False),
+                    "is_past": calendar_entry.get("is_past", False),
+                    "completed_sessions": calendar_entry.get("completed_sessions", 0),
+                    "goal_hit": calendar_entry.get("goal_hit", False),
+                    "session_title": workout.session_title,
+                    "focus": workout.focus,
+                    "objective": workout.objective,
+                    "duration_minutes": workout.duration_minutes,
+                    "intensity": workout.intensity,
+                    "adaptation_hint": workout.adaptation_hint,
+                    "plan_id": plan_id,
+                    "warmup": list(workout.warmup),
+                    "cooldown": list(workout.cooldown),
+                    "blocks": [
+                        self._serialize_block(
+                            block=block,
+                            block_state=block_states.get(block.title, {}),
+                            catalog=catalog,
+                        )
+                        for block in workout.blocks
+                    ],
+                }
+            )
+        return days
+
     @staticmethod
     def _build_meals_from_program(program: GeneratedProgram | None) -> list[dict[str, object]]:
         if program is None:
@@ -434,3 +531,181 @@ class ExperienceService:
                 }
             )
         return meals
+
+    @staticmethod
+    def _build_weekly_nutrition_days(
+        program: GeneratedProgram | None,
+        weekly_calendar: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        if program is None:
+            return [
+                {
+                    "day_label": entry.get("label", ""),
+                    "date": entry.get("date", ""),
+                    "iso_date": entry.get("iso_date", ""),
+                    "is_today": entry.get("is_today", False),
+                    "is_past": entry.get("is_past", False),
+                    "meals": ExperienceService._build_meals_from_program(None),
+                }
+                for entry in weekly_calendar
+            ]
+
+        days: list[dict[str, object]] = []
+        for calendar_entry in weekly_calendar:
+            weekday_index = int(calendar_entry.get("weekday_index", 0))
+            meals: list[dict[str, object]] = []
+            for slot in program.meal_slots:
+                if not slot.weekly_plan:
+                    continue
+                entry = slot.weekly_plan[weekday_index % len(slot.weekly_plan)]
+                meals.append(
+                    {
+                        "title": slot.title,
+                        "meal": entry.meal_name,
+                        "meal_name": entry.meal_name,
+                        "macros": entry.macros,
+                        "objective": slot.objective,
+                        "detail": entry.detail,
+                        "components": list(entry.components),
+                        "preparation": entry.preparation,
+                        "swap_options": list(entry.swap_options),
+                        "calories_kcal": entry.calories_kcal,
+                        "protein_g": entry.protein_g,
+                        "carbs_g": entry.carbs_g,
+                        "fat_g": entry.fat_g,
+                        "fiber_g": entry.fiber_g,
+                        "cooking_time_minutes": entry.cooking_time_minutes,
+                        "ingredients_with_quantities": list(entry.ingredients_with_quantities),
+                        "preparation_steps": list(entry.preparation_steps),
+                        "allergens": list(entry.allergens),
+                        "weekly_plan": [
+                            {
+                                "day_label": item.day_label,
+                                "meal_name": item.meal_name,
+                                "detail": item.detail,
+                                "macros": item.macros,
+                                "components": list(item.components),
+                                "preparation": item.preparation,
+                                "swap_options": list(item.swap_options),
+                            }
+                            for item in slot.weekly_plan
+                        ],
+                        "option_bank": [
+                            {
+                                "name": option.name,
+                                "summary": option.summary,
+                                "macros": option.macros,
+                                "ingredients": list(option.ingredients),
+                                "preparation": option.preparation,
+                                "best_for": option.best_for,
+                                "calories_kcal": option.calories_kcal,
+                                "protein_g": option.protein_g,
+                                "carbs_g": option.carbs_g,
+                                "fat_g": option.fat_g,
+                                "fiber_g": option.fiber_g,
+                                "cooking_time_minutes": option.cooking_time_minutes,
+                                "ingredients_with_quantities": list(option.ingredients_with_quantities),
+                                "preparation_steps": list(option.preparation_steps),
+                                "allergens": list(option.allergens),
+                            }
+                            for option in slot.option_bank
+                        ],
+                    }
+                )
+            days.append(
+                {
+                    "day_label": program.weekly_workouts[weekday_index % len(program.weekly_workouts)].day_label
+                    if program.weekly_workouts
+                    else calendar_entry.get("label", ""),
+                    "date": calendar_entry.get("date", ""),
+                    "iso_date": calendar_entry.get("iso_date", ""),
+                    "is_today": calendar_entry.get("is_today", False),
+                    "is_past": calendar_entry.get("is_past", False),
+                    "completed_sessions": calendar_entry.get("completed_sessions", 0),
+                    "goal_hit": calendar_entry.get("goal_hit", False),
+                    "meals": meals,
+                }
+            )
+        return days
+
+    @staticmethod
+    def _plan_anchor_date(plan: InitialPlanRead):
+        created = plan.created_at.astimezone(UTC) if plan.created_at.tzinfo else plan.created_at.replace(tzinfo=UTC)
+        today = datetime.now(UTC).date()
+        if 0 <= (today - created.date()).days <= 1 and created >= datetime.now(UTC) - timedelta(hours=36):
+            return today
+        return created.date()
+
+    @staticmethod
+    def _catalog_entry(catalog: dict[str, object], name: str) -> dict[str, object]:
+        item = catalog.get(name)
+        if item is None:
+            return {
+                "name": name,
+                "muscle_group": None,
+                "location": None,
+                "notes": "",
+                "image_url": None,
+                "substitutions": [],
+            }
+        return {
+            "name": item.name,
+            "muscle_group": item.muscle_group,
+            "location": item.location,
+            "notes": item.default_notes,
+            "image_url": item.image_url,
+            "substitutions": json.loads(item.substitutions_json or "[]"),
+        }
+
+    def _serialize_block(
+        self,
+        *,
+        block,
+        block_state: dict[str, object],
+        catalog: dict[str, object],
+    ) -> dict[str, object]:
+        selected_exercises = {
+            item for item in (block_state.get("selected_exercises", []) or [])
+        }
+        exercises = []
+        substitutions = []
+        for exercise in block.exercises:
+            exercise_catalog = self._catalog_entry(catalog, exercise.name)
+            exercises.append(
+                {
+                    "name": exercise.name,
+                    "sets": exercise.sets,
+                    "reps": exercise.reps,
+                    "rest": exercise.rest,
+                    "notes": exercise.notes,
+                    "muscle_group": exercise.muscle_group,
+                    "location": exercise.location,
+                    "substitutions": list(exercise.substitutions),
+                    "image_url": exercise.image_url,
+                    "is_selected": not selected_exercises or exercise.name in selected_exercises,
+                    "catalog": exercise_catalog,
+                }
+            )
+            for substitution_name in exercise.substitutions:
+                item = self._catalog_entry(catalog, substitution_name)
+                substitutions.append(
+                    {
+                        **item,
+                        "for_exercise": exercise.name,
+                        "is_selected": substitution_name in selected_exercises,
+                    }
+                )
+        return {
+            "title": block.title,
+            "description": block.description,
+            "time_box": block.time_box,
+            "goal": block.goal,
+            "muscle_group": ", ".join(
+                sorted({exercise.muscle_group for exercise in block.exercises if exercise.muscle_group})
+            ),
+            "location": next((exercise.location for exercise in block.exercises if exercise.location), None),
+            "substitutions": substitutions[:8],
+            "completed": bool(block_state.get("completed", False)),
+            "selected_exercises": list(selected_exercises),
+            "exercises": exercises,
+        }

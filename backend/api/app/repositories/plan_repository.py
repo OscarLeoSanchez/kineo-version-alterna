@@ -21,6 +21,21 @@ class PlanRepository:
         )
         return self.db.scalar(statement)
 
+    def get_by_id_for_user(self, *, user_id: int, plan_id: int) -> InitialPlan | None:
+        statement = select(InitialPlan).where(
+            InitialPlan.id == plan_id,
+            InitialPlan.user_id == user_id,
+        )
+        return self.db.scalar(statement)
+
+    def list_for_user(self, user_id: int) -> list[InitialPlan]:
+        statement = (
+            select(InitialPlan)
+            .where(InitialPlan.user_id == user_id)
+            .order_by(InitialPlan.created_at.desc(), InitialPlan.id.desc())
+        )
+        return list(self.db.scalars(statement).all())
+
     def upsert_plan(
         self,
         *,

@@ -21,18 +21,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
     'Rendimiento deportivo',
     'Recuperar habitos',
   ];
-  static const _activityOptions = [
-    'Principiante',
-    'Intermedio',
-    'Avanzado',
+  static const _activityOptions = ['Principiante', 'Intermedio', 'Avanzado'];
+  static const _sexOptions = ['Masculino', 'Femenino', 'Intersexual'];
+  static const _genderOptions = [
+    'Hombre',
+    'Mujer',
+    'No binario',
+    'Prefiero no decirlo',
   ];
   static const _workoutDayOptions = [2, 3, 4, 5, 6, 7];
   static const _sessionMinuteOptions = [30, 45, 60, 75, 90];
-  static const _trainingLocationOptions = [
-    'Casa',
-    'Gimnasio',
-    'Mixto',
-  ];
+  static const _trainingLocationOptions = ['Casa', 'Gimnasio', 'Mixto'];
   static const _cookingStyleOptions = [
     'Simple',
     'Batch cooking',
@@ -41,6 +40,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   ];
   static const _mealsPerDayOptions = [3, 4, 5, 6];
   static const _equipmentOptions = [
+    'Gimnasio',
     'Mancuernas',
     'Banda',
     'Barra',
@@ -66,6 +66,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     'Jaula de sentadilla',
     'Barras EZ',
     'Otra',
+  ];
+  static const _gymVariantOptions = [
+    'Musculacion',
+    'Maquinas',
+    'Peso libre',
+    'CrossFit',
+    'Powerlifting',
+    'HIIT funcional',
   ];
   static const _dietOptions = [
     'Alto en proteina',
@@ -118,6 +126,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _ageController = TextEditingController(text: '30');
+  final _birthDateController = TextEditingController();
   final _heightController = TextEditingController(text: '175');
   final _weightController = TextEditingController(text: '78');
   final _foodDislikesController = TextEditingController();
@@ -139,12 +148,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   String _selectedGoal = _goalOptions.first;
   String _selectedActivity = 'Intermedio';
+  String _selectedSex = 'Masculino';
+  String _selectedGender = 'Hombre';
   int _selectedWorkoutDays = 4;
   int _selectedSessionMinutes = 45;
   String _selectedTrainingLocation = 'Mixto';
   String _selectedCookingStyle = 'Simple';
   int _selectedMealsPerDay = 4;
   final Set<String> _selectedEquipment = {'Mancuernas', 'Banda'};
+  final Set<String> _selectedGymVariants = {'Musculacion'};
   final Set<String> _selectedDiet = {'Alto en proteina'};
   final Set<String> _selectedAllergies = {'Ninguna'};
   final Set<String> _selectedRestrictions = {'Ninguna'};
@@ -181,6 +193,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   void _applyProfile(OnboardingProfile profile) {
     _nameController.text = profile.fullName;
     _ageController.text = '${profile.age}';
+    _birthDateController.text = profile.birthDate ?? '';
     _heightController.text = '${profile.heightCm}';
     _weightController.text = '${profile.weightKg}';
     _selectedGoal = _goalOptions.contains(profile.goal)
@@ -189,17 +202,24 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _selectedActivity = _activityOptions.contains(profile.activityLevel)
         ? profile.activityLevel
         : 'Intermedio';
-    _selectedWorkoutDays = _workoutDayOptions.contains(profile.workoutDaysPerWeek)
+    _selectedSex = _sexOptions.contains(profile.sex)
+        ? profile.sex!
+        : 'Masculino';
+    _selectedGender = _genderOptions.contains(profile.genderIdentity)
+        ? profile.genderIdentity!
+        : 'Hombre';
+    _selectedWorkoutDays =
+        _workoutDayOptions.contains(profile.workoutDaysPerWeek)
         ? profile.workoutDaysPerWeek
         : 4;
     _selectedSessionMinutes =
         _sessionMinuteOptions.contains(profile.sessionMinutes)
-            ? profile.sessionMinutes
-            : 45;
+        ? profile.sessionMinutes
+        : 45;
     _selectedTrainingLocation =
         _trainingLocationOptions.contains(profile.trainingLocation)
-            ? profile.trainingLocation
-            : 'Mixto';
+        ? profile.trainingLocation
+        : 'Mixto';
     _selectedCookingStyle = _cookingStyleOptions.contains(profile.cookingStyle)
         ? profile.cookingStyle
         : 'Simple';
@@ -216,6 +236,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
             ? {'Mancuernas', 'Banda'}
             : profile.equipment.map(_normalizeSelectableValue),
       );
+    _selectedGymVariants
+      ..clear()
+      ..addAll(_inferGymVariants(profile.equipment));
     _selectedDiet
       ..clear()
       ..addAll(
@@ -268,6 +291,48 @@ class _OnboardingPageState extends State<OnboardingPage> {
     return 'Otra';
   }
 
+  Set<String> _inferGymVariants(List<String> equipment) {
+    final values = equipment.map((item) => item.toLowerCase()).toSet();
+    final variants = <String>{};
+    final hasGymSignals =
+        values.contains('maquinas de gimnasio') ||
+        values.contains('poleas') ||
+        values.contains('discos y rack') ||
+        values.contains('smith machine') ||
+        values.contains('prensa') ||
+        values.contains('jaula de sentadilla') ||
+        values.contains('barras ez');
+    if (hasGymSignals) {
+      _selectedEquipment.add('Gimnasio');
+      variants.add('Musculacion');
+    }
+    if (values.contains('maquinas de gimnasio') || values.contains('poleas')) {
+      variants.add('Maquinas');
+    }
+    if (values.contains('barra') ||
+        values.contains('mancuernas') ||
+        values.contains('discos y rack')) {
+      variants.add('Peso libre');
+    }
+    if (values.contains('kettlebells') ||
+        values.contains('cuerda') ||
+        values.contains('box o step') ||
+        values.contains('balon medicinal') ||
+        values.contains('remo')) {
+      variants.add('CrossFit');
+    }
+    if (values.contains('jaula de sentadilla') ||
+        values.contains('discos y rack')) {
+      variants.add('Powerlifting');
+    }
+    if (values.contains('cuerda') ||
+        values.contains('box o step') ||
+        values.contains('balon medicinal')) {
+      variants.add('HIIT funcional');
+    }
+    return variants;
+  }
+
   void _syncOtherValuesFromProfile(OnboardingProfile profile) {
     _otherEquipmentController.text = _extractCustomValues(
       profile.equipment,
@@ -307,6 +372,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _pageController.dispose();
     _nameController.dispose();
     _ageController.dispose();
+    _birthDateController.dispose();
     _heightController.dispose();
     _weightController.dispose();
     _foodDislikesController.dispose();
@@ -354,6 +420,31 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final initialDate =
+        DateTime.tryParse(_birthDateController.text) ??
+        DateTime(now.year - 30, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(now.year - 80),
+      lastDate: DateTime(now.year - 16),
+    );
+    if (picked == null) return;
+    final today = DateTime(now.year, now.month, now.day);
+    var age = today.year - picked.year;
+    final birthdayThisYear = DateTime(today.year, picked.month, picked.day);
+    if (birthdayThisYear.isAfter(today)) {
+      age -= 1;
+    }
+    setState(() {
+      _birthDateController.text =
+          '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      _ageController.text = '$age';
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -366,6 +457,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final profile = OnboardingProfile(
       fullName: _nameController.text.trim(),
       age: int.parse(_ageController.text),
+      birthDate: _birthDateController.text.trim().isEmpty
+          ? null
+          : _birthDateController.text.trim(),
+      sex: _selectedSex,
+      genderIdentity: _selectedGender,
       heightCm: int.parse(_heightController.text),
       weightKg: int.parse(_weightController.text),
       goal: _selectedGoal,
@@ -385,10 +481,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         otherController: _otherAllergyController,
         excludeNone: true,
       ),
-      equipment: _buildSelectedValues(
-        selected: _selectedEquipment,
-        otherController: _otherEquipmentController,
-      ),
+      equipment: _buildEquipmentValues(),
       foodDislikes: _foodDislikesController.text
           .split(',')
           .map((item) => item.trim())
@@ -435,9 +528,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final title = _hasExistingProfile
@@ -478,10 +569,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   children: [
                     _StepLayout(
                       title: 'Identidad y objetivo',
-                      description:
-                          _hasExistingProfile
-                              ? 'Tu nombre ya vive en perfil. Aqui ajustamos direccion actual.'
-                              : 'Definimos objetivo, nivel y punto de partida.',
+                      description: _hasExistingProfile
+                          ? 'Tu nombre ya vive en perfil. Aqui ajustamos direccion actual.'
+                          : 'Definimos objetivo, nivel y punto de partida.',
                       child: Column(
                         children: [
                           if (!_hasExistingProfile)
@@ -503,6 +593,22 @@ class _OnboardingPageState extends State<OnboardingPage> {
                             }),
                           ),
                           _buildDropdown(
+                            label: 'Sexo biologico',
+                            value: _selectedSex,
+                            options: _sexOptions,
+                            onChanged: (value) => setState(() {
+                              _selectedSex = value!;
+                            }),
+                          ),
+                          _buildDropdown(
+                            label: 'Genero',
+                            value: _selectedGender,
+                            options: _genderOptions,
+                            onChanged: (value) => setState(() {
+                              _selectedGender = value!;
+                            }),
+                          ),
+                          _buildDropdown(
                             label: 'Entrenas principalmente en',
                             value: _selectedTrainingLocation,
                             options: _trainingLocationOptions,
@@ -519,6 +625,24 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           'Medidas generales para personalizar volumen, carga y referencia inicial.',
                       child: Column(
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: TextFormField(
+                              controller: _birthDateController,
+                              readOnly: true,
+                              onTap: _pickBirthDate,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Selecciona tu fecha de nacimiento';
+                                }
+                                return null;
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Fecha de nacimiento',
+                                suffixIcon: Icon(Icons.calendar_month_rounded),
+                              ),
+                            ),
+                          ),
                           _buildField(_ageController, 'Edad', isNumeric: true),
                           _buildField(
                             _heightController,
@@ -567,6 +691,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
                             selected: _selectedEquipment,
                             otherController: _otherEquipmentController,
                           ),
+                          if (_selectedEquipment.contains('Gimnasio')) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              '¿Qué tipo de gimnasio usas?',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 10),
+                            _buildMultiSelectChips(
+                              options: _gymVariantOptions,
+                              selected: _selectedGymVariants,
+                              allowNone: false,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -653,12 +790,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           Wrap(
                             spacing: 12,
                             runSpacing: 12,
-                            children: _measurementControllers.entries.map((entry) {
+                            children: _measurementControllers.entries.map((
+                              entry,
+                            ) {
                               return SizedBox(
                                 width: 150,
                                 child: TextFormField(
                                   controller: entry.value,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   decoration: InputDecoration(
                                     labelText: _measurementLabel(entry.key),
                                   ),
@@ -711,10 +853,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           _isSubmitting
                               ? 'Guardando...'
                               : _step == 5
-                                  ? (_hasExistingProfile
-                                      ? 'Actualizar plan'
-                                      : 'Generar plan')
-                                  : 'Continuar',
+                              ? (_hasExistingProfile
+                                    ? 'Actualizar plan'
+                                    : 'Generar plan')
+                              : 'Continuar',
                         ),
                       ),
                     ),
@@ -761,18 +903,25 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: DropdownButtonFormField<T>(
-        initialValue: value,
-        items: options
-            .map(
-              (option) => DropdownMenuItem<T>(
-                value: option,
-                child: Text(option.toString()),
-              ),
-            )
-            .toList(),
-        onChanged: onChanged,
-        decoration: InputDecoration(labelText: label),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((option) {
+              final isSelected = option == value;
+              return ChoiceChip(
+                label: Text(option.toString()),
+                selected: isSelected,
+                selectedColor: const Color(0xFFD6EEE6),
+                onSelected: (_) => onChanged(option),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -810,8 +959,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
                   if (value) {
                     selected.add(option);
+                    if (identical(selected, _selectedEquipment) &&
+                        option == 'Gimnasio' &&
+                        _selectedGymVariants.isEmpty) {
+                      _selectedGymVariants.add('Musculacion');
+                    }
                   } else {
                     selected.remove(option);
+                    if (identical(selected, _selectedEquipment) &&
+                        option == 'Gimnasio') {
+                      _selectedGymVariants.clear();
+                    }
                   }
 
                   if (selected.isEmpty && allowNone && singleNoneOption) {
@@ -857,6 +1015,53 @@ class _OnboardingPageState extends State<OnboardingPage> {
         .where((item) => item.isNotEmpty)
         .toList();
     return [...values, ...customValues];
+  }
+
+  List<String> _buildEquipmentValues() {
+    final selected = _selectedEquipment
+        .where((item) => item != 'Otra' && item != 'Gimnasio')
+        .toList();
+    final expanded = <String>{
+      ...selected,
+      ..._otherEquipmentController.text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty),
+    };
+    if (_selectedEquipment.contains('Gimnasio')) {
+      expanded.addAll({
+        'Mancuernas',
+        'Barra',
+        'Banco',
+        'Maquinas de gimnasio',
+        'Poleas',
+      });
+      if (_selectedGymVariants.contains('Musculacion')) {
+        expanded.addAll({'Smith machine', 'Prensa', 'Barras EZ'});
+      }
+      if (_selectedGymVariants.contains('Maquinas')) {
+        expanded.addAll({'Maquinas de gimnasio', 'Poleas', 'Prensa'});
+      }
+      if (_selectedGymVariants.contains('Peso libre')) {
+        expanded.addAll({'Discos y rack', 'Jaula de sentadilla', 'Banco'});
+      }
+      if (_selectedGymVariants.contains('CrossFit')) {
+        expanded.addAll({
+          'Kettlebells',
+          'Cuerda',
+          'Box o step',
+          'Balon medicinal',
+          'Remo',
+        });
+      }
+      if (_selectedGymVariants.contains('Powerlifting')) {
+        expanded.addAll({'Barra', 'Discos y rack', 'Jaula de sentadilla'});
+      }
+      if (_selectedGymVariants.contains('HIIT funcional')) {
+        expanded.addAll({'Cuerda', 'Balon medicinal', 'Box o step'});
+      }
+    }
+    return expanded.toList();
   }
 
   String _measurementLabel(String key) {

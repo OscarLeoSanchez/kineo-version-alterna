@@ -1,12 +1,19 @@
+import asyncio
 import json
 import logging
+from typing import AsyncGenerator
+
+from sqlalchemy.orm import Session
 
 from app.ai.planner import DeterministicPlanningProvider, build_planning_provider
 from app.ai.planning_models import GeneratedProgram
 from app.core.personalization import PersonalizationContext
 from app.models.user_profile import UserProfile
+from app.repositories.plan_modification_repository import PlanModificationRepository
 from app.repositories.plan_repository import PlanRepository
+from app.repositories.profile_repository import ProfileRepository
 from app.schemas.plan import InitialPlanRead
+from app.services.plan_modification_service import PlanModificationService
 
 
 class PlanService:
@@ -37,13 +44,15 @@ class PlanService:
         plan = self.repository.get_by_profile_id(profile_id)
         if plan is None:
             return None
-        return self._to_read_model(plan)
+        merged = self._merge_modifications(plan)
+        return self._to_read_model(plan, override_payload=merged)
 
     def get_current_plan_for_user(self, user_id: int) -> InitialPlanRead | None:
         plan = self.repository.get_by_user_id(user_id)
         if plan is None:
             return None
-        return self._to_read_model(plan)
+        merged = self._merge_modifications(plan, user_id=user_id)
+        return self._to_read_model(plan, override_payload=merged)
 
     def personalize_plan(
         self,
@@ -121,6 +130,88 @@ class PlanService:
             created_at=plan.created_at,
         )
 
+    def _merge_modifications(self, plan: object, user_id: int | None = None) -> dict | None:
+        """
+        Load active modifications and merge them into the plan payload.
+        Returns the merged payload dict, or None if no payload is present.
+        Logs a warning if schema_version < 2 but does not crash.
+        """
+        raw_payload = getattr(plan, "plan_payload", None)
+        if not raw_payload:
+            return None
+        try:
+            payload_dict = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except (json.JSONDecodeError, TypeError):
+            logging.warning("plan_service: could not parse plan_payload for plan id=%s", getattr(plan, "id", "?"))
+            return None
+        if not isinstance(payload_dict, dict):
+            return None
+
+        schema_version = payload_dict.get("schema_version")
+        if schema_version is None or int(schema_version) < 2:
+            logging.warning(
+                "plan_service: plan id=%s has schema_version=%s (< 2); skipping modifications merge",
+                getattr(plan, "id", "?"),
+                schema_version,
+            )
+            payload_dict["_has_modifications"] = False
+            payload_dict["_modification_count"] = 0
+            return payload_dict
+
+        # Determine user_id from plan if not passed explicitly
+        resolved_user_id = user_id or getattr(plan, "user_id", None)
+        plan_id = getattr(plan, "id", None)
+
+        if resolved_user_id is None:
+            payload_dict["_has_modifications"] = False
+            payload_dict["_modification_count"] = 0
+            return payload_dict
+
+        mods = PlanModificationRepository(self.repository.db).list_active(resolved_user_id, plan_id)
+        return PlanModificationService.merge_plan_with_modifications(payload_dict, mods)
+
+    @staticmethod
+    def _is_stale(plan: object) -> bool:
+        raw_payload = getattr(plan, "plan_payload", None)
+        if raw_payload is None:
+            return True
+        try:
+            payload_dict = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except (json.JSONDecodeError, TypeError):
+            return True
+        if not isinstance(payload_dict, dict):
+            return True
+        if "schema_version" not in payload_dict:
+            return True
+        return int(payload_dict["schema_version"]) < 2
+
+    def _generate_plan_sync(self, profile: UserProfile) -> InitialPlanRead:
+        return self.generate_for_profile(profile)
+
+    async def generate_stream(self, db: Session, user_id: int) -> AsyncGenerator[str, None]:
+        profile = ProfileRepository(db).get_latest_for_user(user_id)
+        if profile is None:
+            yield 'data: {"step":"error","message":"Perfil no encontrado"}\n\n'
+            return
+
+        yield 'data: {"step":"progress","label":"Analizando tu perfil...","pct":10}\n\n'
+        await asyncio.sleep(0.8)
+
+        yield 'data: {"step":"progress","label":"Construyendo bloques de entrenamiento...","pct":35}\n\n'
+        await asyncio.sleep(0.8)
+
+        yield 'data: {"step":"progress","label":"Diseñando tu plan nutricional...","pct":60}\n\n'
+        await asyncio.sleep(0.8)
+
+        yield 'data: {"step":"progress","label":"Personalizando recomendaciones...","pct":85}\n\n'
+        await asyncio.sleep(0.8)
+
+        loop = asyncio.get_event_loop()
+        plan = await loop.run_in_executor(None, self._generate_plan_sync, profile)
+
+        plan_payload = plan.plan_payload if plan.plan_payload is not None else {}
+        yield f'data: {{"step":"done","pct":100,"plan":{json.dumps(plan_payload)}}}\n\n'
+
     @staticmethod
     def parse_generated_program(plan: InitialPlanRead) -> GeneratedProgram | None:
         if plan.plan_payload is None:
@@ -128,11 +219,14 @@ class PlanService:
         return GeneratedProgram.model_validate(plan.plan_payload)
 
     @staticmethod
-    def _to_read_model(plan: object) -> InitialPlanRead:
-        payload = None
-        raw_payload = getattr(plan, "plan_payload", None)
-        if raw_payload:
-            payload = json.loads(raw_payload)
+    def _to_read_model(plan: object, override_payload: dict | None = None) -> InitialPlanRead:
+        if override_payload is not None:
+            payload = override_payload
+        else:
+            payload = None
+            raw_payload = getattr(plan, "plan_payload", None)
+            if raw_payload:
+                payload = json.loads(raw_payload)
         return InitialPlanRead.model_validate(
             {
                 "id": plan.id,

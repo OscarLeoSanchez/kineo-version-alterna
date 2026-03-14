@@ -3,11 +3,20 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class WorkoutBlockStatePayload(BaseModel):
+    block_title: str = Field(min_length=2, max_length=160)
+    completed: bool = False
+    selected_exercises: list[str] = Field(default_factory=list)
+
+
 class WorkoutSessionCreate(BaseModel):
     session_minutes: int = Field(ge=10, le=240)
     focus: str = Field(min_length=3, max_length=120)
     energy_level: str = Field(default="Media", min_length=3, max_length=40)
     notes: str = Field(default="", max_length=280)
+    day_iso_date: str | None = Field(default=None, min_length=10, max_length=10)
+    plan_id: int | None = None
+    block_states: list[WorkoutBlockStatePayload] = Field(default_factory=list)
 
 
 class NutritionLogCreate(BaseModel):
@@ -47,6 +56,7 @@ class WorkoutSessionHistoryItem(BaseModel):
     session_minutes: int
     energy_level: str
     notes: str
+    day_iso_date: str | None = None
     completed_at: datetime
 
     model_config = {"from_attributes": True}

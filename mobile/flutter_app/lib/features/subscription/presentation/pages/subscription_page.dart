@@ -20,6 +20,7 @@ class _ControlCenterPageState extends State<ControlCenterPage> {
   }
 
   Future<void> _refresh() async {
+    if (!mounted) return;
     setState(() {
       _preferencesFuture = ProfilePreferencesSyncService().load();
     });
@@ -27,6 +28,7 @@ class _ControlCenterPageState extends State<ControlCenterPage> {
 
   Future<void> _savePreferences(ProfilePreferences preferences) async {
     await ProfilePreferencesSyncService().save(preferences);
+    if (!mounted) return;
     await _refresh();
   }
 

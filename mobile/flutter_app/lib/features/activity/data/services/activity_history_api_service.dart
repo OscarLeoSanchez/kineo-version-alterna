@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/services/local_sync_store.dart';
+import '../../../../core/services/session_data_cache.dart';
+import 'offline_activity_queue_service.dart';
 import '../../../auth/data/services/auth_session_store.dart';
 
 class ActivityHistoryApiService {
@@ -10,18 +14,36 @@ class ActivityHistoryApiService {
 
   Future<Map<String, dynamic>> fetchHistory() async {
     final session = await AuthSessionStore().load();
-    final response = await http.get(
-      Uri.parse('${AppConfig.apiBaseUrl}/api/v1/activity/history'),
-      headers: {
-        if (session != null) 'Authorization': 'Bearer ${session.accessToken}',
-      },
-    );
+    final cache = const LocalSyncStore();
+    unawaited(const OfflineActivityQueueService().flush());
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.apiBaseUrl}/api/v1/activity/history'),
+        headers: {
+          if (session != null) 'Authorization': 'Bearer ${session.accessToken}',
+        },
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('No se pudo cargar el historial');
+      if (response.statusCode != 200) {
+        throw Exception('No se pudo cargar el historial');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      await cache.writeHistory(data);
+      SessionDataCache.instance.history = data;
+      return data;
+    } catch (_) {
+      final inMemory = SessionDataCache.instance.history;
+      if (inMemory != null) {
+        return inMemory;
+      }
+      final cached = await cache.readHistory();
+      if (cached != null) {
+        SessionDataCache.instance.history = cached;
+        return cached;
+      }
+      rethrow;
     }
-
-    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> fetchFilteredHistory({
@@ -42,7 +64,11 @@ class ActivityHistoryApiService {
       throw Exception('No se pudo cargar el historial filtrado');
     }
 
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (filterType == 'all') {
+      SessionDataCache.instance.history = data;
+    }
+    return data;
   }
 
   Future<void> updateWorkout({
@@ -125,7 +151,10 @@ class ActivityHistoryApiService {
   }
 
   Future<void> deleteBodyMetric(int id) async {
-    await _sendJson(path: '/api/v1/activity/body-metrics/$id', method: 'DELETE');
+    await _sendJson(
+      path: '/api/v1/activity/body-metrics/$id',
+      method: 'DELETE',
+    );
   }
 
   Future<void> _sendJson({

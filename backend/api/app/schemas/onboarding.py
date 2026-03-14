@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field
 class UserProfileBase(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     age: int = Field(ge=16, le=80)
+    birth_date: date | None = None
+    sex: str | None = Field(default=None, min_length=2, max_length=32)
+    gender_identity: str | None = Field(default=None, min_length=2, max_length=32)
     height_cm: int = Field(ge=120, le=230)
     weight_kg: int = Field(ge=35, le=250)
     goal: str = Field(min_length=3, max_length=80)

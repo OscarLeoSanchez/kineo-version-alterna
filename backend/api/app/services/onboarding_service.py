@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, date, datetime
 
 from app.core.personalization import PersonalizationContext
 from app.repositories.activity_repository import ActivityRepository
@@ -78,6 +79,9 @@ class OnboardingService:
                 "user_id": profile.user_id,
                 "full_name": profile.full_name,
                 "age": profile.age,
+                "birth_date": profile.birth_date,
+                "sex": profile.sex,
+                "gender_identity": profile.gender_identity,
                 "height_cm": profile.height_cm,
                 "weight_kg": profile.weight_kg,
                 "goal": profile.goal,

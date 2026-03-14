@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +21,10 @@ class ProfileRepository:
         )
         return self.db.scalar(statement)
 
+    def get_by_id(self, profile_id: int) -> UserProfile | None:
+        statement = select(UserProfile).where(UserProfile.id == profile_id)
+        return self.db.scalar(statement)
+
     def create_profile(self, *, user_id: int, payload: UserProfileCreate) -> UserProfile:
         return self.upsert_latest_profile(user_id=user_id, payload=payload)
 
@@ -30,6 +35,9 @@ class ProfileRepository:
 
         profile.full_name = payload.full_name
         profile.age = payload.age
+        profile.birth_date = payload.birth_date
+        profile.sex = payload.sex
+        profile.gender_identity = payload.gender_identity
         profile.height_cm = payload.height_cm
         profile.weight_kg = payload.weight_kg
         profile.goal = payload.goal

@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,6 +13,9 @@ class UserProfile(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     full_name: Mapped[str] = mapped_column(String(120))
     age: Mapped[int] = mapped_column(Integer)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    sex: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    gender_identity: Mapped[str | None] = mapped_column(String(32), nullable=True)
     height_cm: Mapped[int] = mapped_column(Integer)
     weight_kg: Mapped[int] = mapped_column(Integer)
     goal: Mapped[str] = mapped_column(String(80))

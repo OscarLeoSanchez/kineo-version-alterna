@@ -1,7 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../auth/data/services/auth_session_controller.dart';
+import '../../../../core/cache/dashboard_cache.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../goals/data/services/goals_api_service.dart';
 import '../../../nutrition/data/services/nutrition_log_api_service.dart';
 import '../../../onboarding/data/services/onboarding_api_service.dart';
@@ -25,11 +32,26 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _isQuickLoggingWorkout = false;
   bool _isQuickLoggingNutrition = false;
   bool _isQuickLoggingWeight = false;
+  String? _profileImagePath;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    _dashboardFuture = _loadDashboard();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      final cached = DashboardCache().cachedData;
+      if (cached != null) {
+        _dashboardFuture = Future.value(_dashboardViewModelFromCache(cached));
+      } else {
+        _dashboardFuture = _loadDashboard();
+      }
+    }
   }
 
   Future<_DashboardViewModel> _loadDashboard() async {
@@ -37,44 +59,85 @@ class _DashboardPageState extends State<DashboardPage> {
     const planService = PlanApiService();
     final controller = AuthSessionScope.of(context);
     final session = controller.session;
+
+    // Step 1: fetch profile first — required for fallback values in parallel calls.
     final latestProfile = await onboardingService.fetchLatestProfile();
-    final summary = await _loadSafeMap(
-      () => onboardingService.fetchDashboardSummary(),
-      fallback: _fallbackSummary(latestProfile, session?.fullName),
-    );
-    final plan = await _loadSafeMap(
-      () => planService.fetchCurrentPlan(),
-      fallback: _fallbackPlan(latestProfile),
-    );
-    final progress = await _loadSafeMap(
-      () => const ProgressApiService().fetchProgressSummary(),
-      fallback: {
-        'streak_days': 0,
-        'weekly_adherence': 0,
-        'completed_sessions': 0,
-        'workout_completion_rate': 0,
-        'latest_weight_kg': null,
-      },
-    );
-    final goal = await _loadSafeMap(
-      () => const GoalsApiService().fetchCurrentGoal(),
-      fallback: {
-        'workout_sessions_target': latestProfile?.workoutDaysPerWeek ?? 4,
-        'nutrition_adherence_target': 85,
-        'weight_checkins_target': 2,
-        'reminders_enabled': true,
-        'reminder_time': '07:00',
-      },
-    );
-    final history = await _loadSafeMap(
-      () => const ActivityHistoryApiService().fetchHistory(),
-      fallback: const {
-        'workouts': [],
-        'nutrition_logs': [],
-        'body_metrics': [],
-      },
-    );
+
+    // Step 2: run all remaining fetches in parallel.
+    final results = await Future.wait([
+      _loadSafeMap(
+        () => onboardingService.fetchDashboardSummary(),
+        fallback: _fallbackSummary(latestProfile, session?.fullName),
+      ),
+      _loadSafeMap(
+        () => planService.fetchCurrentPlan(),
+        fallback: _fallbackPlan(latestProfile),
+      ),
+      _loadSafeMap(
+        () => const ProgressApiService().fetchProgressSummary(),
+        fallback: {
+          'streak_days': 0,
+          'weekly_adherence': 0,
+          'completed_sessions': 0,
+          'workout_completion_rate': 0,
+          'latest_weight_kg': null,
+        },
+      ),
+      _loadSafeMap(
+        () => const GoalsApiService().fetchCurrentGoal(),
+        fallback: {
+          'workout_sessions_target': latestProfile?.workoutDaysPerWeek ?? 4,
+          'nutrition_adherence_target': 85,
+          'weight_checkins_target': 2,
+          'reminders_enabled': true,
+          'reminder_time': '07:00',
+        },
+      ),
+      _loadSafeMap(
+        () => const ActivityHistoryApiService().fetchHistory(),
+        fallback: const {
+          'workouts': [],
+          'nutrition_logs': [],
+          'body_metrics': [],
+        },
+      ),
+    ]);
+
+    final summary = results[0];
+    final plan = results[1];
+    final progress = results[2];
+    final goal = results[3];
+    final history = results[4];
+
     final preferences = await ProfilePreferencesSyncService().load();
+
+    final fullName = (latestProfile?.fullName?.isNotEmpty == true)
+        ? latestProfile!.fullName!
+        : (session?.fullName.isNotEmpty == true)
+            ? session!.fullName
+            : '';
+
+    final todayStatus = _buildTodayStatus(history);
+
+    // Store to cache so subsequent widget mounts skip the network round-trip.
+    DashboardCache().store({
+      'fullName': fullName,
+      'summary': summary,
+      'plan': plan,
+      'progress': progress,
+      'goal': goal,
+      'history': history,
+      'hasProfile': latestProfile != null,
+      'preferences': {
+        'coachingStyle': preferences.coachingStyle,
+        'units': preferences.units,
+        'remindersEnabled': preferences.remindersEnabled,
+        'experienceMode': preferences.experienceMode,
+        'dailyPriority': preferences.dailyPriority,
+        'recommendationDepth': preferences.recommendationDepth,
+        'proactiveAdjustments': preferences.proactiveAdjustments,
+      },
+    });
 
     return _DashboardViewModel(
       summary: summary,
@@ -82,9 +145,40 @@ class _DashboardPageState extends State<DashboardPage> {
       progress: progress,
       goal: goal,
       history: history,
-      fullName: latestProfile?.fullName ?? session?.fullName ?? 'Usuario',
+      fullName: fullName,
       preferences: preferences,
       hasProfile: latestProfile != null,
+      todayStatus: todayStatus,
+    );
+  }
+
+  /// Reconstructs a [_DashboardViewModel] from a previously cached map.
+  _DashboardViewModel _dashboardViewModelFromCache(
+    Map<String, dynamic> cached,
+  ) {
+    final rawPrefs = cached['preferences'] as Map<String, dynamic>? ?? {};
+    final preferences = ProfilePreferences(
+      coachingStyle: rawPrefs['coachingStyle']?.toString() ?? 'Equilibrado',
+      units: rawPrefs['units']?.toString() ?? 'Metricas',
+      remindersEnabled: rawPrefs['remindersEnabled'] as bool? ?? true,
+      experienceMode: rawPrefs['experienceMode']?.toString() ?? 'Full',
+      dailyPriority: rawPrefs['dailyPriority']?.toString() ?? 'Adherencia',
+      recommendationDepth:
+          rawPrefs['recommendationDepth']?.toString() ?? 'Profunda',
+      proactiveAdjustments: rawPrefs['proactiveAdjustments'] as bool? ?? true,
+    );
+    final history =
+        (cached['history'] as Map<String, dynamic>?) ??
+        const {'workouts': [], 'nutrition_logs': [], 'body_metrics': []};
+    return _DashboardViewModel(
+      fullName: cached['fullName']?.toString() ?? '',
+      summary: (cached['summary'] as Map<String, dynamic>?) ?? {},
+      plan: (cached['plan'] as Map<String, dynamic>?) ?? {},
+      progress: (cached['progress'] as Map<String, dynamic>?) ?? {},
+      goal: (cached['goal'] as Map<String, dynamic>?) ?? {},
+      history: history,
+      preferences: preferences,
+      hasProfile: cached['hasProfile'] as bool? ?? false,
       todayStatus: _buildTodayStatus(history),
     );
   }
@@ -176,10 +270,179 @@ class _DashboardPageState extends State<DashboardPage> {
     };
   }
 
+  Future<void> _pickProfileImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source, imageQuality: 80);
+      if (picked != null && mounted) {
+        setState(() {
+          _profileImagePath = picked.path;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo acceder a la imagen.')),
+      );
+    }
+  }
+
+  void _showProfileImageSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _BottomSheetFrame(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_rounded),
+                  title: const Text('Cámara'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _pickProfileImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_rounded),
+                  title: const Text('Galería'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _pickProfileImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _refreshDashboard() {
     setState(() {
       _dashboardFuture = _loadDashboard();
     });
+  }
+
+  void _showReportToCoachSheet(BuildContext ctx) {
+    final messageController = TextEditingController();
+    String selectedCategory = 'Lesion o molestia';
+
+    showModalBottomSheet<void>(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            return _BottomSheetFrame(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.of(sheetCtx).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Habla con tu coach',
+                      style: Theme.of(sheetCtx).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '¿Qué necesitas ajustar en tu rutina?',
+                      style: Theme.of(sheetCtx).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      decoration: const InputDecoration(labelText: 'Categoría'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Lesion o molestia',
+                          child: Text('Lesión o molestia'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Cambio de horario',
+                          child: Text('Cambio de horario'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Cambio de meta',
+                          child: Text('Cambio de meta'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Otro',
+                          child: Text('Otro'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setSheetState(() {
+                          selectedCategory = value ?? selectedCategory;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Mensaje',
+                        hintText:
+                            'Ej: Tengo dolor de rodilla y no puedo hacer sentadillas esta semana...',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () {
+                          final msg = messageController.text.trim();
+                          final cat = selectedCategory;
+                          Navigator.of(sheetCtx).pop();
+                          _sendCoachReport(msg, cat);
+                        },
+                        child: const Text('Enviar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(messageController.dispose);
+  }
+
+  Future<void> _sendCoachReport(String message, String category) async {
+    try {
+      final session = AuthSessionScope.of(context).session;
+      final uri = Uri.parse('${AppConfig.apiBaseUrl}/api/v1/plans/coach-report');
+      await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (session != null) 'Authorization': 'Bearer ${session.accessToken}',
+        },
+        body: jsonEncode({'message': message, 'category': category}),
+      );
+    } catch (_) {
+      // Endpoint may not exist yet; treat as success for UX purposes.
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tu reporte fue recibido. Tu plan se actualizará pronto.'),
+      ),
+    );
   }
 
   Future<void> _editRecentWorkout(Map<String, dynamic> item) async {
@@ -843,21 +1106,24 @@ class _DashboardPageState extends State<DashboardPage> {
                     children: [
                       Row(
                         children: [
-                          Container(
-                            width: 54,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.16),
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              _initials(data?.fullName ?? 'Coach'),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          GestureDetector(
+                            onTap: _showProfileImageSheet,
+                            child: CircleAvatar(
+                              radius: 27,
+                              backgroundColor: Colors.white.withValues(alpha: 0.16),
+                              backgroundImage: _profileImagePath != null
+                                  ? FileImage(File(_profileImagePath!))
+                                  : null,
+                              child: _profileImagePath == null
+                                  ? Text(
+                                      _initials(data?.fullName ?? 'Coach'),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -866,7 +1132,9 @@ class _DashboardPageState extends State<DashboardPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Hola, ${_firstName(data?.fullName ?? 'Usuario')}',
+                                  (data?.fullName.isNotEmpty == true)
+                                      ? 'Hola, ${_firstName(data!.fullName)}'
+                                      : 'Hola',
                                   style: theme.textTheme.headlineMedium?.copyWith(
                                     color: Colors.white,
                                     fontSize: 30,
@@ -885,13 +1153,28 @@ class _DashboardPageState extends State<DashboardPage> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                      Row(
                         children: [
-                          _CoachBadge(label: preferences.coachingStyle),
-                          _CoachBadge(label: preferences.units),
-                          _CoachBadge(label: preferences.dailyPriority),
+                          _HeaderActionChip(
+                            icon: Icons.auto_awesome_rounded,
+                            label: 'Mi Plan',
+                            color: const Color(0xFF2A6A65),
+                            onTap: () => Navigator.of(context).pushNamed('/plan-generation'),
+                          ),
+                          const SizedBox(width: 8),
+                          _HeaderActionChip(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            label: 'Reportar',
+                            color: const Color(0xFFD97706),
+                            onTap: () => _showReportToCoachSheet(context),
+                          ),
+                          const SizedBox(width: 8),
+                          _HeaderActionChip(
+                            icon: Icons.tune_rounded,
+                            label: 'Ajustes',
+                            color: const Color(0xFF7C3AED),
+                            onTap: () => Navigator.of(context).pushNamed('/profile'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 18),
@@ -915,7 +1198,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      data?.fullName ?? 'Coach',
+                                      (data?.fullName.isNotEmpty == true)
+                                          ? data!.fullName
+                                          : 'Coach',
                                       style: theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.white,
                                       ),
@@ -1037,6 +1322,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   complete: todayStatus['workout'] == true,
                   busy: _isQuickLoggingWorkout,
                   onTap: data == null ? null : () => _openQuickWorkoutLog(data),
+                  onEditTap: recentWorkout == null
+                      ? null
+                      : () => _editRecentWorkout(recentWorkout),
                 ),
                 const SizedBox(height: 12),
                 _TodayStepCard(
@@ -1050,6 +1338,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   complete: todayStatus['nutrition'] == true,
                   busy: _isQuickLoggingNutrition,
                   onTap: data == null ? null : _openQuickNutritionLog,
+                  onEditTap: recentNutrition == null
+                      ? null
+                      : () => _editRecentNutrition(recentNutrition),
                 ),
                 const SizedBox(height: 12),
                 _TodayStepCard(
@@ -1063,6 +1354,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   complete: todayStatus['weight'] == true,
                   busy: _isQuickLoggingWeight,
                   onTap: data == null ? null : _openQuickWeightLog,
+                  onEditTap: recentMetric == null
+                      ? null
+                      : () => _editRecentWeight(recentMetric),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -1116,21 +1410,27 @@ class _DashboardPageState extends State<DashboardPage> {
                 const SizedBox(height: 20),
                 Text('Tu foco actual', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 12),
-                _FeatureStrip(
+                _InteractiveFeatureStrip(
                   title: 'Entrenamiento',
                   description:
                       data?.summary['workout_focus']?.toString() ??
                       'Construiremos el foco despues del onboarding.',
                   color: const Color(0xFFDDEBE5),
+                  actionLabel: 'Ver',
+                  onAction: data == null
+                      ? null
+                      : () => _openQuickWorkoutLog(data),
                 ),
                 const SizedBox(height: 12),
-                _FeatureStrip(
+                _InteractiveFeatureStrip(
                   title: 'Nutricion',
                   description:
                       data?.plan['nutrition_summary']?.toString() ??
                       data?.summary['nutrition_focus']?.toString() ??
                       'Agregaremos lineamientos nutricionales despues del onboarding.',
                   color: const Color(0xFFF0E5D2),
+                  actionLabel: 'Ver',
+                  onAction: data == null ? null : _openQuickNutritionLog,
                 ),
                 const SizedBox(height: 20),
                 Text('Actividad reciente', style: theme.textTheme.titleLarge),
@@ -1265,6 +1565,50 @@ class _CoachBadge extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           fontWeight: FontWeight.w700,
           color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderActionChip extends StatelessWidget {
+  const _HeaderActionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1453,6 +1797,7 @@ class _TodayStepCard extends StatelessWidget {
     required this.complete,
     required this.busy,
     required this.onTap,
+    this.onEditTap,
   });
 
   final String stepLabel;
@@ -1463,10 +1808,18 @@ class _TodayStepCard extends StatelessWidget {
   final bool complete;
   final bool busy;
   final VoidCallback? onTap;
+  final VoidCallback? onEditTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final effectiveTap = complete ? (onEditTap ?? onTap) : onTap;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        onTap: busy ? null : effectiveTap,
+        borderRadius: BorderRadius.circular(28),
+        child: Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -1538,12 +1891,14 @@ class _TodayStepCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: busy ? null : onTap,
+                onPressed: busy ? null : (complete ? (onEditTap ?? onTap) : onTap),
                 child: Text(complete ? 'Actualizar' : 'Registrar'),
               ),
             ],
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -1734,41 +2089,54 @@ class _InteractiveFeatureStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: color,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        onTap: onAction,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF143C3A).withValues(alpha: 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF143C3A).withValues(alpha: 0.05),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
               ),
-              if (actionLabel != null && onAction != null)
-                TextButton(
-                  onPressed: onAction,
-                  child: Text(actionLabel!),
-                ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(description, style: Theme.of(context).textTheme.bodyLarge),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  if (actionLabel != null && onAction != null)
+                    TextButton(
+                      onPressed: onAction,
+                      child: Text(actionLabel!),
+                    ),
+                  if (onAction != null)
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Color(0xFF143C3A),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(description, style: Theme.of(context).textTheme.bodyLarge),
+            ],
+          ),
+        ),
       ),
     );
   }

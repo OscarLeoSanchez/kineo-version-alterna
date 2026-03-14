@@ -12,6 +12,8 @@ class WorkoutSession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("user_profiles.id"), index=True, nullable=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("initial_plans.id"), index=True, nullable=True)
+    day_iso_date: Mapped[str | None] = mapped_column(String(10), index=True, nullable=True)
     session_minutes: Mapped[int] = mapped_column(Integer)
     focus: Mapped[str] = mapped_column(String(120))
     energy_level: Mapped[str] = mapped_column(String(40), default="Media")

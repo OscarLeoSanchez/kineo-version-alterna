@@ -12,7 +12,10 @@ class WorkoutSummaryRead(BaseModel):
     sos_hint: str
     completed_sessions: int
     completed_today: bool
+    selected_day_index: int
+    plan_id: int | None = None
     weekly_calendar: list[dict[str, int | str | bool]]
+    weekly_days: list[dict[str, Any]]
 
 
 class NutritionSummaryRead(BaseModel):
@@ -22,6 +25,24 @@ class NutritionSummaryRead(BaseModel):
     meals: list[dict[str, Any]]
     swap_tip: str
     adherence_score: int
+    selected_day_index: int
+    plan_id: int | None = None
+    weekly_days: list[dict[str, Any]]
+
+
+class NutritionPhotoAnalysisRead(BaseModel):
+    meal_label: str
+    detected_dish_name: str
+    estimated_calories_kcal: int
+    estimated_protein_g: float
+    estimated_carbs_g: float
+    estimated_fat_g: float
+    estimated_fiber_g: float = 0.0
+    confidence_note: str
+    detected_items: list[str]
+    ingredients: list[str] = []
+    serving_hint: str
+    coach_note: str
 
 
 class ProgressSummaryRead(BaseModel):

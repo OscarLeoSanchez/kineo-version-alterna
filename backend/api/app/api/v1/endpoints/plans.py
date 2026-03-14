@@ -11,10 +11,34 @@ from app.db.session import get_db
 from app.repositories.plan_repository import PlanRepository
 from app.repositories.preferences_repository import PreferencesRepository
 from app.repositories.profile_repository import ProfileRepository
-from app.schemas.plan import InitialPlanRead
+from app.schemas.plan import InitialPlanRead, PlanHistoryItemRead
 from app.services.plan_service import PlanService
 
 router = APIRouter(prefix="/plans")
+
+
+@router.get("/generate-stream")
+async def generate_plan_stream(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """SSE endpoint for streaming plan generation progress."""
+    from fastapi.responses import StreamingResponse
+
+    plan_service = PlanService(PlanRepository(db))
+
+    async def event_stream():
+        async for event in plan_service.generate_stream(db, current_user.id):
+            yield event
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/current", response_model=InitialPlanRead)
@@ -48,3 +72,27 @@ async def get_current_plan(
         profile=profile,
         context=effective_personalization,
     )
+
+
+@router.get("/history", response_model=list[PlanHistoryItemRead])
+async def get_plan_history(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> list[PlanHistoryItemRead]:
+    plans = PlanRepository(db).list_for_user(current_user.id)
+    current_plan = PlanRepository(db).get_by_user_id(current_user.id)
+    items: list[PlanHistoryItemRead] = []
+    for plan in plans:
+        created = plan.created_at
+        week_label = f"Semana del {created.strftime('%d/%m/%Y')}"
+        items.append(
+            PlanHistoryItemRead(
+                id=plan.id,
+                profile_id=plan.profile_id,
+                workout_focus=plan.workout_focus,
+                created_at=created,
+                week_label=week_label,
+                is_current=current_plan is not None and current_plan.id == plan.id,
+            )
+        )
+    return items

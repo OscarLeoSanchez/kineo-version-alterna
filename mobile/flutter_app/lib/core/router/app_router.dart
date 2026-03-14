@@ -4,9 +4,11 @@ import '../../features/auth/presentation/pages/auth_page.dart';
 import '../../features/dashboard/presentation/pages/home_shell.dart';
 import '../../features/history/presentation/pages/history_page.dart';
 import '../../features/onboarding/presentation/pages/onboarding_page.dart';
+import '../../features/plans/presentation/pages/plan_generation_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/settings/presentation/pages/goals_settings_page.dart';
 import '../../features/subscription/presentation/pages/subscription_page.dart';
+import '../../features/workout/presentation/screens/workout_mode_screen.dart';
 
 class AppRouter {
   static const String auth = '/auth';
@@ -14,8 +16,10 @@ class AppRouter {
   static const String history = '/history';
   static const String goals = '/goals';
   static const String onboarding = '/onboarding';
+  static const String planGeneration = '/plan-generation';
   static const String profile = '/profile';
   static const String controlCenter = '/control-center';
+  static const String workoutMode = '/workout-mode';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -27,9 +31,13 @@ class AppRouter {
         return _buildAnimatedRoute(settings);
       case goals:
         return _buildAnimatedRoute(settings);
+      case planGeneration:
+        return _buildAnimatedRoute(settings);
       case profile:
         return _buildAnimatedRoute(settings);
       case controlCenter:
+        return _buildAnimatedRoute(settings);
+      case workoutMode:
         return _buildAnimatedRoute(settings);
       case dashboard:
       default:
@@ -43,7 +51,7 @@ class AppRouter {
       transitionDuration: const Duration(milliseconds: 320),
       reverseTransitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (_, animation, __) {
-        return buildPage(settings.name);
+        return buildPage(settings.name, settings);
       },
       transitionsBuilder: (_, animation, secondaryAnimation, child) {
         final fade = CurvedAnimation(
@@ -97,7 +105,7 @@ class AppRouter {
     );
   }
 
-  static Widget buildPage(String? routeName) {
+  static Widget buildPage(String? routeName, [RouteSettings? settings]) {
     switch (routeName) {
       case auth:
         return const AuthPage();
@@ -107,10 +115,21 @@ class AppRouter {
         return const HistoryPage();
       case goals:
         return const GoalsSettingsPage();
+      case planGeneration:
+        return const PlanGenerationPage();
       case profile:
         return const ProfilePage();
       case controlCenter:
         return const ControlCenterPage();
+      case workoutMode:
+        final args =
+            settings?.arguments as Map<String, dynamic>? ?? const {};
+        return WorkoutModeScreen(
+          exerciseName: args['exerciseName'] as String? ?? '',
+          dayIsoDate: args['dayIsoDate'] as String? ??
+              DateTime.now().toIso8601String().substring(0, 10),
+          blockTitle: args['blockTitle'] as String?,
+        );
       case dashboard:
       default:
         return const HomeShellPage();

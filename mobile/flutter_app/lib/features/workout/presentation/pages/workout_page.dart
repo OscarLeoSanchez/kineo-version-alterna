@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 
 import '../../../activity/data/services/activity_history_api_service.dart';
+import '../../../nutrition/data/services/nutrition_api_service.dart';
+import '../../../plans/data/services/plan_api_service.dart';
+import '../../../plans/presentation/pages/plan_generation_page.dart';
 import '../../../profile/data/services/profile_preferences_store.dart';
 import '../../../profile/domain/models/profile_preferences.dart';
+import '../../../../core/services/session_data_cache.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_surface_card.dart';
+import '../../../../shared/widgets/activity_record_detail_sheet.dart';
+import '../../../../shared/widgets/pressable_card.dart';
+import '../../../../shared/widgets/shimmer_box.dart';
 import '../../data/services/workout_api_service.dart';
+import '../../data/services/workout_block_api_service.dart';
 import '../../data/services/workout_log_api_service.dart';
+import '../widgets/workout_detail_sheet.dart';
+import '../widgets/workout_log_confirmation_sheet.dart';
 
 class WorkoutPage extends StatefulWidget {
   const WorkoutPage({super.key});
@@ -15,48 +25,171 @@ class WorkoutPage extends StatefulWidget {
   State<WorkoutPage> createState() => _WorkoutPageState();
 }
 
-class _WorkoutPageState extends State<WorkoutPage> {
-  late Future<_WorkoutViewData> _future;
+class _WorkoutPageState extends State<WorkoutPage>
+    with AutomaticKeepAliveClientMixin {
+  _WorkoutViewData? _viewData;
+  bool _isInitialLoading = true;
   bool _isSubmitting = false;
-  bool _isRefreshing = false;
+  int? _selectedDayIndex;
+  int? _selectedPlanId;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadWorkout();
+    final cache = SessionDataCache.instance;
+    if (cache.hasWorkoutBundle) {
+      _viewData = _WorkoutViewData(
+        summary: _sanitizeWorkoutSummary(cache.workoutSummary!),
+        nutritionSummary: cache.nutritionSummary!,
+        planHistory: cache.planHistory!,
+        history: cache.history!,
+        preferences: ProfilePreferences.defaults(),
+      );
+      _isInitialLoading = false;
+      ProfilePreferencesStore().load().then((preferences) {
+        if (!mounted || _viewData == null) return;
+        setState(() {
+          _viewData = _viewData!.copyWith(preferences: preferences);
+        });
+      });
+      _refreshSilently();
+    } else {
+      _bootstrap();
+    }
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final data = await _loadWorkout();
+      if (!mounted) return;
+      setState(() {
+        _viewData = data;
+        _isInitialLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refreshSilently() async {
+    try {
+      final data = await _loadWorkout();
+      if (!mounted) return;
+      setState(() {
+        _viewData = data;
+      });
+    } catch (_) {
+      // keep stale UI when silent refresh fails
+    }
   }
 
   Future<_WorkoutViewData> _loadWorkout() async {
     final results = await Future.wait([
-      const WorkoutApiService().fetchWorkoutSummary(),
+      WorkoutApiService().fetchWorkoutSummary(planId: _selectedPlanId),
+      NutritionApiService().fetchNutritionSummary(planId: _selectedPlanId),
+      const PlanApiService().fetchPlanHistory(),
       const ActivityHistoryApiService().fetchHistory(),
     ]);
+    final summary = _sanitizeWorkoutSummary(results[0] as Map<String, dynamic>);
+    final nutritionSummary = results[1] as Map<String, dynamic>;
+    final planHistory = results[2] as List<Map<String, dynamic>>;
+    final history = results[3] as Map<String, dynamic>;
+    SessionDataCache.instance
+      ..workoutSummary = summary
+      ..nutritionSummary = nutritionSummary
+      ..planHistory = planHistory
+      ..history = history;
     return _WorkoutViewData(
-      summary: results[0],
-      history: results[1],
+      summary: summary,
+      nutritionSummary: nutritionSummary,
+      planHistory: planHistory,
+      history: history,
       preferences: await ProfilePreferencesStore().load(),
     );
   }
 
+  Map<String, dynamic> _sanitizeWorkoutSummary(Map<String, dynamic> summary) {
+    final copy = Map<String, dynamic>.from(summary);
+    copy['weekly_days'] = (copy['weekly_days'] as List<dynamic>? ?? []).map((
+      rawDay,
+    ) {
+      final day = Map<String, dynamic>.from(rawDay as Map);
+      day['blocks'] = (day['blocks'] as List<dynamic>? ?? []).map((rawBlock) {
+        final block = Map<String, dynamic>.from(rawBlock as Map);
+        block['exercises'] = (block['exercises'] as List<dynamic>? ?? const [])
+            .map((item) {
+              if (item is Map<String, dynamic>) return item;
+              if (item is Map) {
+                return item.map(
+                  (key, value) => MapEntry(key.toString(), value),
+                );
+              }
+              if (item is String) return {'name': item};
+              return <String, dynamic>{};
+            })
+            .where((item) => item.isNotEmpty)
+            .toList();
+        block['substitutions'] =
+            (block['substitutions'] as List<dynamic>? ?? const [])
+                .map((item) {
+                  if (item is Map<String, dynamic>) return item;
+                  if (item is Map) {
+                    return item.map(
+                      (key, value) => MapEntry(key.toString(), value),
+                    );
+                  }
+                  if (item is String) return {'name': item};
+                  return <String, dynamic>{};
+                })
+                .where((item) => item.isNotEmpty)
+                .toList();
+        block['selected_exercises'] =
+            (block['selected_exercises'] as List<dynamic>? ?? const [])
+                .map((item) => item.toString())
+                .toList();
+        return block;
+      }).toList();
+      return day;
+    }).toList();
+    return copy;
+  }
+
   Future<void> _refreshWorkoutPlan() async {
-    setState(() {
-      _isRefreshing = true;
-      _future = _loadWorkout();
-    });
-    try {
-      await _future;
-      if (!mounted) return;
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      PageRouteBuilder<Map<String, dynamic>>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const PlanGenerationPage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curve = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.08),
+              end: Offset.zero,
+            ).animate(curve),
+            child: FadeTransition(opacity: curve, child: child),
+          );
+        },
+      ),
+    );
+
+    // Whether the user generated a new plan or cancelled, refresh the data
+    await _refreshSilently();
+
+    if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Plan actualizado con la informacion mas reciente.'),
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isRefreshing = false;
-        });
-      }
     }
   }
 
@@ -107,26 +240,51 @@ class _WorkoutPageState extends State<WorkoutPage> {
         ? (data['focus']?.toString() ?? 'Sesion adaptativa')
         : result.sessionName;
     final notes = [
-      if (completedTitles.isNotEmpty) 'Bloques completados: ${completedTitles.join(', ')}',
+      if (completedTitles.isNotEmpty)
+        'Bloques completados: ${completedTitles.join(', ')}',
       'RPE: ${result.effort.round()}/10',
       'Tecnica: ${result.technique}',
       if (result.note.isNotEmpty) result.note,
     ].join(' | ');
 
     try {
-      await const WorkoutLogApiService().submitWorkout(
+      final submitResult = await const WorkoutLogApiService().submitWorkout(
         sessionMinutes: data['duration_minutes'] as int? ?? 45,
         focus: focusLabel,
         energyLevel: result.energyLevel,
+        dayIsoDate: data['iso_date']?.toString(),
+        planId: data['plan_id'] as int?,
+        blockStates: List.generate(blocks.length, (index) {
+          final block = blocks[index];
+          final selectedExercises =
+              (block['selected_exercises'] as List<dynamic>? ?? const [])
+                  .map((item) => item.toString())
+                  .toList();
+          return {
+            'block_title': block['title']?.toString() ?? 'Bloque',
+            'completed': result.completedBlocks[index],
+            'selected_exercises': selectedExercises,
+          };
+        }),
         notes: notes,
       );
-      setState(() {
-        _future = _loadWorkout();
-      });
+      await _refreshSilently();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sesion registrada en tu progreso.')),
-      );
+      if (submitResult.queuedOffline) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sin internet: la sesión quedó guardada localmente y se enviará cuando vuelva la conexión.',
+            ),
+          ),
+        );
+      } else {
+        showWorkoutLogConfirmationSheet(
+          context,
+          focus: focusLabel,
+          energyLevel: result.energyLevel,
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -180,18 +338,23 @@ class _WorkoutPageState extends State<WorkoutPage> {
                     decoration: const InputDecoration(labelText: 'Notas'),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: energyLevel,
-                    items: const [
-                      DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-                      DropdownMenuItem(value: 'Media', child: Text('Media')),
-                      DropdownMenuItem(value: 'Baja', child: Text('Baja')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        energyLevel = value ?? 'Media';
-                      });
-                    },
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Alta', 'Media', 'Baja']
+                        .map(
+                          (value) => ChoiceChip(
+                            label: Text(value),
+                            selected: energyLevel == value,
+                            selectedColor: const Color(0xFFD6EEE6),
+                            onSelected: (_) {
+                              setModalState(() {
+                                energyLevel = value;
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
                   ),
                 ],
               );
@@ -227,9 +390,7 @@ class _WorkoutPageState extends State<WorkoutPage> {
         notes: notesController.text.trim(),
       );
       if (!mounted) return;
-      setState(() {
-        _future = _loadWorkout();
-      });
+      await _refreshSilently();
     } finally {
       durationController.dispose();
       focusController.dispose();
@@ -240,9 +401,178 @@ class _WorkoutPageState extends State<WorkoutPage> {
   Future<void> _deleteWorkout(int id) async {
     await const ActivityHistoryApiService().deleteWorkout(id);
     if (!mounted) return;
+    final current = _viewData;
+    if (current != null) {
+      final updatedHistory = Map<String, dynamic>.from(current.history);
+      final workouts = (updatedHistory['workouts'] as List<dynamic>? ?? [])
+          .where((entry) {
+            return (entry as Map<String, dynamic>)['id'] != id;
+          })
+          .toList();
+      updatedHistory['workouts'] = workouts;
+      setState(() {
+        _viewData = current.copyWith(history: updatedHistory);
+      });
+    }
+    await _refreshSilently();
+  }
+
+  void _updateLocalBlockState({
+    required String blockTitle,
+    required Map<String, dynamic>? selectedDay,
+    bool? completed,
+    String? toggledExercise,
+  }) {
+    final current = _viewData;
+    if (current == null || selectedDay == null) {
+      return;
+    }
+    final summary = Map<String, dynamic>.from(current.summary);
+    final weeklyDays = (summary['weekly_days'] as List<dynamic>? ?? [])
+        .toList();
+    final selectedIndex = _resolveSelectedDayIndex(
+      weeklyDays,
+      summary['selected_day_index'] as int? ?? 0,
+    );
+    if (selectedIndex >= weeklyDays.length) {
+      return;
+    }
+    final day = Map<String, dynamic>.from(weeklyDays[selectedIndex] as Map);
+    final blocks = (day['blocks'] as List<dynamic>? ?? []).map((item) {
+      final block = Map<String, dynamic>.from(item as Map);
+      if (block['title']?.toString() != blockTitle) {
+        return block;
+      }
+      if (completed != null) {
+        block['completed'] = completed;
+      }
+      if (toggledExercise != null) {
+        final selectedExercises =
+            (block['selected_exercises'] as List<dynamic>? ?? const [])
+                .map((item) => item.toString())
+                .toSet();
+        if (selectedExercises.contains(toggledExercise)) {
+          selectedExercises.remove(toggledExercise);
+        } else {
+          selectedExercises.add(toggledExercise);
+        }
+        block['selected_exercises'] = selectedExercises.toList();
+        final exercises = (block['exercises'] as List<dynamic>? ?? []).map((
+          raw,
+        ) {
+          final exercise = Map<String, dynamic>.from(raw as Map);
+          final name = exercise['name']?.toString() ?? '';
+          exercise['is_selected'] = selectedExercises.isEmpty
+              ? true
+              : selectedExercises.contains(name);
+          return exercise;
+        }).toList();
+        block['exercises'] = exercises;
+        final substitutions = (block['substitutions'] as List<dynamic>? ?? [])
+            .map((raw) {
+              final substitution = Map<String, dynamic>.from(raw as Map);
+              final name = substitution['name']?.toString() ?? '';
+              substitution['is_selected'] = selectedExercises.contains(name);
+              return substitution;
+            })
+            .toList();
+        block['substitutions'] = substitutions;
+      }
+      return block;
+    }).toList();
+    day['blocks'] = blocks;
+    weeklyDays[selectedIndex] = day;
+    summary['weekly_days'] = weeklyDays;
     setState(() {
-      _future = _loadWorkout();
+      _viewData = current.copyWith(summary: summary);
     });
+  }
+
+  Future<void> _persistBlockState({
+    required String blockTitle,
+    required Map<String, dynamic>? selectedDay,
+  }) async {
+    final current = _viewData;
+    final targetDay =
+        ((current?.summary['weekly_days'] as List<dynamic>? ?? const [])
+                .cast<Map<String, dynamic>>())
+            .firstWhere(
+              (item) =>
+                  item['iso_date']?.toString() ==
+                  selectedDay?['iso_date']?.toString(),
+              orElse: () => selectedDay ?? <String, dynamic>{},
+            );
+    final block =
+        ((targetDay['blocks'] as List<dynamic>? ?? const [])
+                .cast<Map<String, dynamic>>())
+            .firstWhere(
+              (item) => item['title']?.toString() == blockTitle,
+              orElse: () => <String, dynamic>{},
+            );
+    if (block.isEmpty) {
+      return;
+    }
+    try {
+      await const WorkoutBlockApiService().saveBlockState(
+        dayIsoDate: targetDay['iso_date']?.toString() ?? '',
+        planId: targetDay['plan_id'] as int?,
+        blockTitle: blockTitle,
+        completed: block['completed'] == true,
+        selectedExercises:
+            (block['selected_exercises'] as List<dynamic>? ?? const [])
+                .map((item) => item.toString())
+                .toList(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No pudimos guardar el estado del bloque.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleBlockCompletion({
+    required String blockTitle,
+    required Map<String, dynamic>? selectedDay,
+  }) async {
+    if (selectedDay == null || selectedDay['is_today'] != true) {
+      return;
+    }
+    final currentBlock =
+        ((selectedDay?['blocks'] as List<dynamic>? ?? const [])
+                .cast<Map<String, dynamic>>())
+            .firstWhere(
+              (item) => item['title']?.toString() == blockTitle,
+              orElse: () => <String, dynamic>{},
+            );
+    if (currentBlock['completed'] == true) {
+      return;
+    }
+    final nextCompleted = true;
+    _updateLocalBlockState(
+      blockTitle: blockTitle,
+      selectedDay: selectedDay,
+      completed: nextCompleted,
+    );
+    await _persistBlockState(blockTitle: blockTitle, selectedDay: selectedDay);
+  }
+
+  Future<void> _toggleExerciseSelection({
+    required String blockTitle,
+    required String exerciseName,
+    required Map<String, dynamic>? selectedDay,
+  }) async {
+    if (selectedDay == null || selectedDay['is_today'] != true) {
+      return;
+    }
+    _updateLocalBlockState(
+      blockTitle: blockTitle,
+      selectedDay: selectedDay,
+      toggledExercise: exerciseName,
+    );
+    await _persistBlockState(blockTitle: blockTitle, selectedDay: selectedDay);
   }
 
   void _showBlockDetail(
@@ -250,159 +580,276 @@ class _WorkoutPageState extends State<WorkoutPage> {
     ProfilePreferences preferences,
     int index,
     int totalBlocks,
+    Map<String, dynamic>? selectedDay,
+  ) {
+    showWorkoutDetailSheet(
+      context,
+      block: item,
+      blockIndex: index,
+      totalBlocks: totalBlocks,
+      onToggleCompleted: () => _toggleBlockCompletion(
+        blockTitle: item['title']?.toString() ?? 'Bloque',
+        selectedDay: selectedDay,
+      ),
+      onToggleExercise: (exerciseName) => _toggleExerciseSelection(
+        blockTitle: item['title']?.toString() ?? 'Bloque',
+        exerciseName: exerciseName,
+        selectedDay: selectedDay,
+      ),
+    );
+  }
+
+  int _resolveSelectedDayIndex(List<dynamic> weeklyDays, int fallbackIndex) {
+    if (weeklyDays.isEmpty) {
+      return 0;
+    }
+    final safeFallback = fallbackIndex.clamp(0, weeklyDays.length - 1);
+    final stored = _selectedDayIndex;
+    if (stored != null && stored >= 0 && stored < weeklyDays.length) {
+      return stored;
+    }
+    return safeFallback;
+  }
+
+  void _showDayPlanDetail(
+    Map<String, dynamic> workoutDay,
+    Map<String, dynamic>? nutritionDay,
   ) {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DayPlanDetailSheet(
+        workoutDay: workoutDay,
+        nutritionDay: nutritionDay,
+      ),
+    );
+  }
+
+  Future<void> _showWeekPicker(List<Map<String, dynamic>> planHistory) async {
+    if (planHistory.isEmpty) {
+      return;
+    }
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return _WorkoutSheet(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item['title']?.toString() ?? 'Bloque',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                  Chip(label: Text('Paso ${index + 1}/$totalBlocks')),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _formatWorkoutBlockDescription(
-                  item['description']?.toString() ?? '',
-                  preferences.coachingStyle,
-                ),
-              ),
-              if (item['time_box'] != null) ...[
-                const SizedBox(height: 8),
-                Text('Duracion sugerida: ${item['time_box']}'),
-              ],
-              if (item['goal'] != null) ...[
-                const SizedBox(height: 8),
-                Text('Objetivo: ${item['goal']}'),
-              ],
-              const SizedBox(height: 16),
-              if ((item['exercises'] as List<dynamic>? ?? []).isNotEmpty) ...[
+        return Material(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          color: Theme.of(context).colorScheme.surface,
+          child: SafeArea(
+            top: false,
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              children: [
                 Text(
-                  'Ejercicios del bloque',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  'Seleccionar semana',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                ...((item['exercises'] as List<dynamic>).map((exercise) {
-                  final detail = exercise as Map<String, dynamic>;
+                Text(
+                  'Puedes abrir semanas históricas si existen planes guardados.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                ...planHistory.map((item) {
+                  final isSelected =
+                      item['id'] == _selectedPlanId ||
+                      (_selectedPlanId == null && item['is_current'] == true);
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF6F1E8),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            detail['name']?.toString() ?? '',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${detail['sets']} · ${detail['reps']} · Descanso ${detail['rest']}',
-                          ),
-                        ],
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: PressableCard(
+                      borderRadius: 20,
+                      color: isSelected
+                          ? const Color(0xFF143C3A)
+                          : const Color(0xFFF1ECE3),
+                      onTap: () => Navigator.of(context).pop(item),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item['week_label']?.toString() ?? 'Semana',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: isSelected
+                                              ? Colors.white
+                                              : null,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item['workout_focus']?.toString() ?? '',
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white70 : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_circle,
+                                color: Colors.white,
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   );
-                })),
-                const SizedBox(height: 8),
+                }),
               ],
-              _DetailText(
-                title: 'Que hacer',
-                text: _actionForBlock(item['title']?.toString() ?? ''),
-              ),
-              _DetailText(
-                title: 'En que fijarte',
-                text: _cueForBlock(
-                  item['title']?.toString() ?? '',
-                  preferences.coachingStyle,
-                ),
-              ),
-              _DetailText(
-                title: 'Si vas justo de tiempo',
-                text: _fallbackForBlock(item['title']?.toString() ?? ''),
-              ),
-            ],
+            ),
           ),
         );
       },
     );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedPlanId = selected['is_current'] == true
+          ? null
+          : selected['id'] as int?;
+      _selectedDayIndex = null;
+    });
+    await _refreshSilently();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_WorkoutViewData>(
-      future: _future,
-      builder: (context, snapshot) {
-        final viewData = snapshot.data;
-        final data = viewData?.summary;
-        final workouts = viewData?.history['workouts'] as List<dynamic>? ?? [];
-        final weeklyCalendar =
-            data?['weekly_calendar'] as List<dynamic>? ?? [];
-        final preferences =
-            viewData?.preferences ?? ProfilePreferences.defaults();
-        final blocks = (data?['blocks'] as List<dynamic>? ?? [])
+    super.build(context);
+    if (_isInitialLoading) {
+      return _buildShimmerLoading();
+    }
+    final viewData = _viewData;
+    if (viewData == null) {
+      return _buildErrorView(context);
+    }
+    final data = viewData?.summary;
+    final planHistory = viewData?.planHistory ?? const <Map<String, dynamic>>[];
+    final workouts = viewData?.history['workouts'] as List<dynamic>? ?? [];
+    final weeklyCalendar = data?['weekly_calendar'] as List<dynamic>? ?? [];
+    final weeklyDays = data?['weekly_days'] as List<dynamic>? ?? [];
+    final nutritionData = viewData?.nutritionSummary;
+    final nutritionWeeklyDays =
+        nutritionData?['weekly_days'] as List<dynamic>? ?? [];
+    final preferences = viewData?.preferences ?? ProfilePreferences.defaults();
+    final selectedDayIndex = _resolveSelectedDayIndex(
+      weeklyDays,
+      data?['selected_day_index'] as int? ??
+          (weeklyDays.isEmpty ? 0 : weeklyDays.length - 1),
+    );
+    final selectedDay = weeklyDays.isNotEmpty
+        ? weeklyDays[selectedDayIndex] as Map<String, dynamic>
+        : null;
+    final blocks =
+        ((selectedDay?['blocks'] ?? data?['blocks']) as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+      children: [
+        const AppSectionTitle(
+          title: 'Workout',
+          subtitle:
+              'Entiende la sesion, abre cada bloque y registra lo que si hiciste.',
+        ),
+        const SizedBox(height: 18),
+        _buildHero(context, data, preferences, selectedDay),
+        const SizedBox(height: 20),
+        _buildRouteCard(context, blocks, preferences, selectedDay),
+        const SizedBox(height: 20),
+        _buildStats(context, data, preferences),
+        const SizedBox(height: 20),
+        _buildCalendar(
+          context,
+          weeklyCalendar,
+          selectedDayIndex,
+          weeklyDays,
+          nutritionWeeklyDays,
+          planHistory,
+        ),
+        const SizedBox(height: 20),
+        _buildHistory(context, workouts),
+        const SizedBox(height: 16),
+        Row(
           children: [
-            const AppSectionTitle(
-              title: 'Workout',
-              subtitle: 'Entiende la sesion, abre cada bloque y registra lo que si hiciste.',
+            Expanded(
+              child: FilledButton.icon(
+                onPressed:
+                    selectedDay == null ||
+                        _isSubmitting ||
+                        selectedDay['is_today'] != true ||
+                        (data?['completed_today'] == true)
+                    ? null
+                    : () => _registerWorkout(selectedDay),
+                icon: const Icon(Icons.check_circle_outline_rounded),
+                label: Text(_isSubmitting ? 'Guardando...' : 'Cerrar sesión'),
+              ),
             ),
-            const SizedBox(height: 18),
-            _buildHero(context, data, preferences),
-            const SizedBox(height: 20),
-            _buildRouteCard(context, blocks, preferences),
-            const SizedBox(height: 20),
-            _buildStats(context, data, preferences),
-            const SizedBox(height: 20),
-            _buildCalendar(context, weeklyCalendar),
-            const SizedBox(height: 20),
-            _buildHistory(context, workouts),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: data == null || _isSubmitting
-                        ? null
-                        : () => _registerWorkout(data),
-                    icon: const Icon(Icons.check_circle_outline_rounded),
-                    label: Text(
-                      _isSubmitting ? 'Guardando...' : 'Registrar sesion',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isRefreshing ? null : _refreshWorkoutPlan,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: Text(
-                      _isRefreshing ? 'Actualizando...' : 'Actualizar plan',
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _refreshWorkoutPlan,
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: const Text('Actualizar plan'),
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShimmerLoading() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+      children: const [
+        ShimmerBox(width: double.infinity, height: 180, borderRadius: 32),
+        SizedBox(height: 20),
+        ShimmerBox(width: double.infinity, height: 220, borderRadius: 28),
+        SizedBox(height: 20),
+        ShimmerBox(width: double.infinity, height: 120, borderRadius: 24),
+      ],
+    );
+  }
+
+  Widget _buildErrorView(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No pudimos cargar tu sesion de hoy.',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () => _bootstrap(),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -410,9 +857,15 @@ class _WorkoutPageState extends State<WorkoutPage> {
     BuildContext context,
     Map<String, dynamic>? data,
     ProfilePreferences preferences,
+    Map<String, dynamic>? selectedDay,
   ) {
-    final completedToday = data?['completed_today'] == true;
-    final durationMinutes = data?['duration_minutes'] as int? ?? 45;
+    final completedToday =
+        selectedDay?['goal_hit'] == true || data?['completed_today'] == true;
+    final durationMinutes =
+        selectedDay?['duration_minutes'] as int? ??
+        data?['duration_minutes'] as int? ??
+        45;
+    final isPast = selectedDay?['is_past'] == true;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -427,7 +880,9 @@ class _WorkoutPageState extends State<WorkoutPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            data?['title']?.toString() ?? 'Sesion del dia',
+            selectedDay?['session_title']?.toString() ??
+                data?['title']?.toString() ??
+                'Sesion del dia',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
@@ -436,7 +891,9 @@ class _WorkoutPageState extends State<WorkoutPage> {
           ),
           const SizedBox(height: 10),
           Text(
-            data?['focus']?.toString() ?? 'Foco adaptativo',
+            selectedDay?['focus']?.toString() ??
+                data?['focus']?.toString() ??
+                'Foco adaptativo',
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 16),
@@ -444,16 +901,27 @@ class _WorkoutPageState extends State<WorkoutPage> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _HeroChip(label: _formatWorkoutDuration(durationMinutes, preferences.units)),
-              _HeroChip(label: 'Energia ${data?['energy_level']?.toString() ?? '--'}'),
               _HeroChip(
-                label: completedToday ? 'Hoy ya registrada' : 'Lista para ejecutar',
+                label: _formatWorkoutDuration(
+                  durationMinutes,
+                  preferences.units,
+                ),
+              ),
+              _HeroChip(
+                label:
+                    'Energia ${selectedDay?['intensity']?.toString() ?? data?['energy_level']?.toString() ?? '--'}',
+              ),
+              _HeroChip(
+                label: completedToday
+                    ? 'Dia con registro'
+                    : (isPast ? 'Dia anterior visible' : 'Lista para ejecutar'),
               ),
             ],
           ),
           const SizedBox(height: 16),
           Text(
-            data?['sos_hint']?.toString() ??
+            selectedDay?['adaptation_hint']?.toString() ??
+                data?['sos_hint']?.toString() ??
                 'Si algo falla, reestructura sin abandonar la sesion.',
             style: const TextStyle(color: Colors.white70, height: 1.4),
           ),
@@ -466,31 +934,53 @@ class _WorkoutPageState extends State<WorkoutPage> {
     BuildContext context,
     List<Map<String, dynamic>> blocks,
     ProfilePreferences preferences,
+    Map<String, dynamic>? selectedDay,
   ) {
     return AppSurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Ruta de hoy', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Ruta de ${selectedDay?['day_label']?.toString() ?? 'hoy'}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 8),
           Text(
-            'La sesion esta dividida en pasos. Toca cualquier bloque para ver que hacer y como adaptarlo.',
+            'La sesion del dia seleccionado esta dividida en pasos. Toca cualquier bloque para ver que hacer y como adaptarlo.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
+          if (blocks.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F0E6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                selectedDay?['objective']?.toString() ??
+                    'Este dia no tiene bloques cargados.',
+              ),
+            ),
           ...List.generate(blocks.length, (index) {
             final block = blocks[index];
             return Padding(
-              padding: EdgeInsets.only(bottom: index == blocks.length - 1 ? 0 : 12),
-              child: InkWell(
-                onTap: () => _showBlockDetail(block, preferences, index, blocks.length),
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
+              padding: EdgeInsets.only(
+                bottom: index == blocks.length - 1 ? 0 : 12,
+              ),
+              child: PressableCard(
+                color: const Color(0xFFF5F0E6),
+                borderRadius: 24,
+                onTap: () => _showBlockDetail(
+                  block,
+                  preferences,
+                  index,
+                  blocks.length,
+                  selectedDay,
+                ),
+                child: Padding(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F0E6),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -512,17 +1002,63 @@ class _WorkoutPageState extends State<WorkoutPage> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             const SizedBox(height: 6),
-                            Text(_shortBlockSupport(block['description']?.toString() ?? '')),
-                            const SizedBox(height: 8),
                             Text(
-                              'Ver detalle del bloque',
-                              style: Theme.of(context).textTheme.bodySmall,
+                              _shortBlockSupport(
+                                block['description']?.toString() ?? '',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: block['completed'] == true
+                                        ? const Color(0xFFD6EEE6)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    block['completed'] == true
+                                        ? 'Bloque realizado'
+                                        : 'Pendiente',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ),
+                                Text(
+                                  'Ver detalle del bloque',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.chevron_right_rounded),
+                      Column(
+                        children: [
+                          IconButton.filledTonal(
+                            onPressed: () => _toggleBlockCompletion(
+                              blockTitle:
+                                  block['title']?.toString() ?? 'Bloque',
+                              selectedDay: selectedDay,
+                            ),
+                            icon: Icon(
+                              block['completed'] == true
+                                  ? Icons.check_circle_rounded
+                                  : Icons.radio_button_unchecked_rounded,
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -577,39 +1113,112 @@ class _WorkoutPageState extends State<WorkoutPage> {
     );
   }
 
-  Widget _buildCalendar(BuildContext context, List<dynamic> weeklyCalendar) {
+  Widget _buildCalendar(
+    BuildContext context,
+    List<dynamic> weeklyCalendar,
+    int selectedDayIndex,
+    List<dynamic> weeklyDays,
+    List<dynamic> nutritionWeeklyDays,
+    List<Map<String, dynamic>> planHistory,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const AppSectionTitle(title: 'Calendario semanal'),
+        Row(
+          children: [
+            const Expanded(
+              child: AppSectionTitle(
+                title: 'Calendario semanal',
+                subtitle: 'Por defecto se muestra el día actual.',
+              ),
+            ),
+            IconButton(
+              tooltip: 'Seleccionar semana',
+              onPressed: planHistory.isEmpty
+                  ? null
+                  : () => _showWeekPicker(planHistory),
+              icon: const Icon(Icons.calendar_month_rounded),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
-            children: weeklyCalendar.map((entry) {
-              final item = entry as Map<String, dynamic>;
+            children: weeklyCalendar.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value as Map<String, dynamic>;
               final goalHit = item['goal_hit'] == true;
-              return Container(
-                width: 94,
-                margin: const EdgeInsets.only(right: 10),
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-                decoration: BoxDecoration(
-                  color: goalHit
-                      ? const Color(0xFFD6EEE6)
-                      : const Color(0xFFF1ECE3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  children: [
-                    Text(item['label']?.toString() ?? ''),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${item['completed_sessions'] ?? 0}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(item['date']?.toString() ?? ''),
-                  ],
+              final isSelected = index == selectedDayIndex;
+              final isAvailable = item['is_available'] != false;
+              return PressableCard(
+                onTap: !isAvailable
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedDayIndex = index;
+                        });
+                        final workoutDay =
+                            weeklyDays.isNotEmpty && index < weeklyDays.length
+                            ? weeklyDays[index] as Map<String, dynamic>
+                            : null;
+                        final nutritionDay =
+                            nutritionWeeklyDays.isNotEmpty &&
+                                index < nutritionWeeklyDays.length
+                            ? nutritionWeeklyDays[index] as Map<String, dynamic>
+                            : null;
+                        if (workoutDay != null) {
+                          _showDayPlanDetail(workoutDay, nutritionDay);
+                        }
+                      },
+                borderRadius: 20,
+                color: isSelected
+                    ? const Color(0xFF143C3A)
+                    : (!isAvailable
+                          ? const Color(0xFFE9E2D6)
+                          : (goalHit
+                                ? const Color(0xFFD6EEE6)
+                                : const Color(0xFFF1ECE3))),
+                child: Container(
+                  width: 94,
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 10,
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        item['label']?.toString() ?? '',
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : null,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${item['completed_sessions'] ?? 0}',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: isSelected ? Colors.white : null),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item['date']?.toString() ?? '',
+                        style: TextStyle(
+                          color: isSelected ? Colors.white70 : null,
+                        ),
+                      ),
+                      if (!isAvailable) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Aún no',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isSelected ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               );
             }).toList(),
@@ -635,48 +1244,73 @@ class _WorkoutPageState extends State<WorkoutPage> {
                 final item = entry as Map<String, dynamic>;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: AppSurfaceCard(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item['focus']?.toString() ?? '',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${item['session_minutes']} min · ${item['energy_level']}',
-                              ),
-                              if ((item['notes']?.toString() ?? '').isNotEmpty) ...[
+                  child: PressableCard(
+                    onTap: () => _showWorkoutHistoryDetail(item),
+                    borderRadius: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFD8D1C4)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['focus']?.toString() ?? '',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  item['notes']?.toString() ?? '',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  '${item['session_minutes']} min · ${item['energy_level']}',
                                 ),
+                                if ((item['notes']?.toString() ?? '')
+                                    .isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item['notes']?.toString() ?? '',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
                               ],
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _editWorkout(item);
+                              } else if (value == 'delete') {
+                                _deleteWorkout(item['id'] as int);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Editar'),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Eliminar'),
+                              ),
                             ],
                           ),
-                        ),
-                        PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              _editWorkout(item);
-                            } else if (value == 'delete') {
-                              _deleteWorkout(item['id'] as int);
-                            }
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(value: 'edit', child: Text('Editar')),
-                            PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                          ],
-                        ),
-                        Text((item['completed_at']?.toString() ?? '').split('T').first),
-                      ],
+                          Text(
+                            (item['completed_at']?.toString() ?? '')
+                                .split('T')
+                                .first,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -684,18 +1318,66 @@ class _WorkoutPageState extends State<WorkoutPage> {
       ],
     );
   }
+
+  void _showWorkoutHistoryDetail(Map<String, dynamic> item) {
+    final noteText = item['notes']?.toString() ?? '';
+    final noteParts = noteText
+        .split('|')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    showActivityRecordDetailSheet(
+      context,
+      title: item['focus']?.toString() ?? 'Sesion',
+      subtitle: (item['completed_at']?.toString() ?? '').split('T').first,
+      details: [
+        MapEntry('Duracion', '${item['session_minutes'] ?? 0} min'),
+        MapEntry('Energia final', item['energy_level']?.toString() ?? '-'),
+        if (item['day_iso_date'] != null)
+          MapEntry('Dia del plan', item['day_iso_date']?.toString() ?? ''),
+        ...noteParts
+            .take(3)
+            .toList()
+            .asMap()
+            .entries
+            .map((entry) => MapEntry('Detalle ${entry.key + 1}', entry.value)),
+      ],
+      notes: noteParts.length > 3 ? noteParts.skip(3).join('\n') : null,
+      radius: 10,
+    );
+  }
 }
 
 class _WorkoutViewData {
   const _WorkoutViewData({
     required this.summary,
+    required this.nutritionSummary,
+    required this.planHistory,
     required this.history,
     required this.preferences,
   });
 
   final Map<String, dynamic> summary;
+  final Map<String, dynamic> nutritionSummary;
+  final List<Map<String, dynamic>> planHistory;
   final Map<String, dynamic> history;
   final ProfilePreferences preferences;
+
+  _WorkoutViewData copyWith({
+    Map<String, dynamic>? summary,
+    Map<String, dynamic>? nutritionSummary,
+    List<Map<String, dynamic>>? planHistory,
+    Map<String, dynamic>? history,
+    ProfilePreferences? preferences,
+  }) {
+    return _WorkoutViewData(
+      summary: summary ?? this.summary,
+      nutritionSummary: nutritionSummary ?? this.nutritionSummary,
+      planHistory: planHistory ?? this.planHistory,
+      history: history ?? this.history,
+      preferences: preferences ?? this.preferences,
+    );
+  }
 }
 
 class _WorkoutRegistrationResult {
@@ -733,27 +1415,24 @@ class _WorkoutRegistrationPage extends StatefulWidget {
 }
 
 class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
-  late final TextEditingController _sessionNameController;
   late final TextEditingController _noteController;
   late final List<bool> _completedBlocks;
   late String _energyLevel;
   double _effort = 7;
-  String _technique = 'Solida';
+  String _technique = 'Muy bien';
 
   @override
   void initState() {
     super.initState();
-    _sessionNameController = TextEditingController(
-      text: widget.initialSessionName,
-    );
     _noteController = TextEditingController();
-    _completedBlocks = List<bool>.filled(widget.blocks.length, true);
+    _completedBlocks = widget.blocks
+        .map((block) => block['completed'] == true)
+        .toList();
     _energyLevel = widget.initialEnergyLevel;
   }
 
   @override
   void dispose() {
-    _sessionNameController.dispose();
     _noteController.dispose();
     super.dispose();
   }
@@ -761,7 +1440,7 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
   void _submit() {
     Navigator.of(context).pop(
       _WorkoutRegistrationResult(
-        sessionName: _sessionNameController.text.trim(),
+        sessionName: widget.initialSessionName,
         completedBlocks: List<bool>.from(_completedBlocks),
         energyLevel: _energyLevel,
         effort: _effort,
@@ -775,71 +1454,96 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cerrar sesion'),
-      ),
+      appBar: AppBar(title: const Text('Cerrar sesión')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
           children: [
             Text(
-              'Deja trazabilidad clara de que hiciste, como te sentiste y si hay algo que ajustar.',
+              'Marca los bloques que sí completaste. Al final puedes dejar una nota opcional.',
               style: theme.textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _sessionNameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre de esta sesion',
-              ),
             ),
             if (widget.blocks.isNotEmpty) ...[
               const SizedBox(height: 20),
-              Text(
-                'Bloques completados',
-                style: theme.textTheme.titleMedium,
-              ),
+              Text('Bloques completados', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               ...List.generate(widget.blocks.length, (index) {
                 final block = widget.blocks[index];
-                return CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _completedBlocks[index],
-                  title: Text(block['title']?.toString() ?? 'Bloque'),
-                  subtitle: Text(
-                    block['goal']?.toString() ??
-                        _shortBlockSupport(
-                          block['description']?.toString() ?? '',
-                        ),
+                final isDone = _completedBlocks[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: PressableCard(
+                    borderRadius: 20,
+                    color: isDone
+                        ? const Color(0xFFD6EEE6)
+                        : const Color(0xFFF5F0E6),
+                    onTap: () {
+                      setState(() {
+                        _completedBlocks[index] = !_completedBlocks[index];
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isDone
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: isDone
+                                ? const Color(0xFF2E7D52)
+                                : const Color(0xFF8A7F73),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  block['title']?.toString() ?? 'Bloque',
+                                  style: theme.textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  block['goal']?.toString() ??
+                                      _shortBlockSupport(
+                                        block['description']?.toString() ?? '',
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      _completedBlocks[index] = value ?? false;
-                    });
-                  },
                 );
               }),
             ],
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _energyLevel,
-              decoration: const InputDecoration(
-                labelText: 'Energia al terminar',
-              ),
-              items: const [
-                DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-                DropdownMenuItem(value: 'Media', child: Text('Media')),
-                DropdownMenuItem(value: 'Baja', child: Text('Baja')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _energyLevel = value ?? 'Media';
-                });
-              },
+            Text('¿Cómo terminaste?', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['Con mucha energía', 'Bien', 'Cansado']
+                  .map(
+                    (label) => ChoiceChip(
+                      label: Text(label),
+                      selected: _energyLevel == _mapEnergyLabel(label),
+                      selectedColor: const Color(0xFFD6EEE6),
+                      onSelected: (_) {
+                        setState(() {
+                          _energyLevel = _mapEnergyLabel(label);
+                        });
+                      },
+                    ),
+                  )
+                  .toList(),
             ),
             const SizedBox(height: 20),
             Text(
-              'Esfuerzo percibido: ${_effort.round()}/10',
+              'Esfuerzo: ${_effort.round()}/10',
               style: theme.textTheme.titleMedium,
             ),
             Slider(
@@ -855,37 +1559,48 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
               },
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _technique,
-              decoration: const InputDecoration(
-                labelText: 'Como estuvo la tecnica',
-              ),
-              items: const [
-                DropdownMenuItem(value: 'Solida', child: Text('Solida')),
-                DropdownMenuItem(value: 'Aceptable', child: Text('Aceptable')),
-                DropdownMenuItem(value: 'Inestable', child: Text('Inestable')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _technique = value ?? 'Solida';
-                });
-              },
+            Text(
+              '¿Cómo te sentiste con la ejecución?',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['Muy bien', 'Bien', 'Regular']
+                  .map(
+                    (label) => ChoiceChip(
+                      label: Text(label),
+                      selected: _technique == label,
+                      selectedColor: label == 'Muy bien'
+                          ? const Color(0xFFD6EEE6)
+                          : label == 'Bien'
+                          ? const Color(0xFFFFF3CD)
+                          : const Color(0xFFFFE0E0),
+                      onSelected: (_) {
+                        setState(() {
+                          _technique = label;
+                        });
+                      },
+                    ),
+                  )
+                  .toList(),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _noteController,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Observacion final',
+                labelText: 'Nota opcional',
                 hintText:
-                    'Ejemplo: recorte el finisher por tiempo o me senti fuerte en sentadilla.',
+                    'Ejemplo: recorté el final por tiempo o me sentí fuerte en pierna.',
               ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _submit,
               icon: const Icon(Icons.check_circle_outline_rounded),
-              label: const Text('Guardar sesion'),
+              label: const Text('Guardar cierre'),
             ),
             const SizedBox(height: 12),
             OutlinedButton(
@@ -930,6 +1645,176 @@ class _WorkoutSheet extends StatelessWidget {
   }
 }
 
+class _DayPlanDetailSheet extends StatelessWidget {
+  const _DayPlanDetailSheet({
+    required this.workoutDay,
+    required this.nutritionDay,
+  });
+
+  final Map<String, dynamic> workoutDay;
+  final Map<String, dynamic>? nutritionDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final blocks = (workoutDay['blocks'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    final meals = (nutritionDay?['meals'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.78,
+      minChildSize: 0.55,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Material(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          color: Theme.of(context).colorScheme.surface,
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '${workoutDay['day_label'] ?? 'Dia'} · ${workoutDay['date'] ?? ''}',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                workoutDay['session_title']?.toString() ?? 'Plan del dia',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text(workoutDay['focus']?.toString() ?? ''),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _DayChip(
+                    label: '${workoutDay['duration_minutes'] ?? 45} min',
+                  ),
+                  _DayChip(
+                    label: 'Intensidad ${workoutDay['intensity'] ?? 'Media'}',
+                  ),
+                  _DayChip(
+                    label: workoutDay['is_past'] == true
+                        ? 'Dia pasado'
+                        : 'Dia activo',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text('Rutina', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 10),
+              if (blocks.isEmpty)
+                const Text('No hay bloques de entrenamiento para este dia.')
+              else
+                ...blocks.map(
+                  (block) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: AppSurfaceCard(
+                      backgroundColor: const Color(0xFFF5F0E6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            block['title']?.toString() ?? 'Bloque',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(block['description']?.toString() ?? ''),
+                          if ((block['time_box']?.toString() ?? '')
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text('Tiempo: ${block['time_box']}'),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                'Alimentacion',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 10),
+              if (meals.isEmpty)
+                const Text('No hay comidas cargadas para este dia.')
+              else
+                ...meals.map(
+                  (meal) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: AppSurfaceCard(
+                      backgroundColor: const Color(0xFFE9E2D6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            meal['title']?.toString() ?? 'Comida',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(meal['meal']?.toString() ?? ''),
+                          if ((meal['macros']?.toString() ?? '')
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(meal['macros']?.toString() ?? ''),
+                          ],
+                          if ((meal['detail']?.toString() ?? '')
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(meal['detail']?.toString() ?? ''),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DayChip extends StatelessWidget {
+  const _DayChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1ECE3),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label),
+    );
+  }
+}
+
 class _HeroChip extends StatelessWidget {
   const _HeroChip({required this.label});
 
@@ -945,7 +1830,10 @@ class _HeroChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -997,6 +1885,17 @@ String _formatWorkoutDuration(int minutes, String units) {
   return '$minutes min';
 }
 
+String _mapEnergyLabel(String label) {
+  switch (label) {
+    case 'Con mucha energía':
+      return 'Alta';
+    case 'Cansado':
+      return 'Baja';
+    default:
+      return 'Media';
+  }
+}
+
 String _formatWorkoutBlockDescription(String base, String style) {
   return switch (style) {
     'Exigente' => '$base Prioriza una ejecucion precisa y descansos cortos.',
@@ -1007,9 +1906,12 @@ String _formatWorkoutBlockDescription(String base, String style) {
 
 String _advancedWorkoutAlternative(String style) {
   return switch (style) {
-    'Exigente' => 'Si el tiempo se corta, conserva el bloque principal y elimina el accesorio final.',
-    'Flexible' => 'Si no tienes energia, convierte la sesion en una version de mantenimiento de 20 minutos.',
-    _ => 'Si el dia se complica, mantente con movilidad, bloque principal y una salida corta.',
+    'Exigente' =>
+      'Si el tiempo se corta, conserva el bloque principal y elimina el accesorio final.',
+    'Flexible' =>
+      'Si no tienes energia, convierte la sesion en una version de mantenimiento de 20 minutos.',
+    _ =>
+      'Si el dia se complica, mantente con movilidad, bloque principal y una salida corta.',
   };
 }
 
@@ -1022,21 +1924,30 @@ String _shortBlockSupport(String description) {
 
 String _actionForBlock(String title) {
   return switch (title) {
-    'Activacion' => 'Entra en calor, mueve articulaciones clave y prepara respiracion antes de cargar.',
-    'Bloque principal' => 'Aqui va tu trabajo mas importante. Busca concentracion, buena tecnica y ritmo estable.',
-    'Bloque de rendimiento' => 'Usa este bloque para perseguir calidad real: una serie buena vale mas que volumen desordenado.',
-    'Finisher' => 'Cierra con intensidad corta. Debe sentirse exigente pero controlable.',
-    'Salida de recuperacion' => 'Baja pulsaciones, recupera movilidad y termina mejor de lo que empezaste.',
-    'Checklist tecnico' => 'Revisa postura, respiracion y el patron tecnico que quieres repetir mejor.',
-    _ => 'Ejecuta este bloque con atencion y usa la consigna tecnica principal como guia.',
+    'Activacion' =>
+      'Entra en calor, mueve articulaciones clave y prepara respiracion antes de cargar.',
+    'Bloque principal' =>
+      'Aqui va tu trabajo mas importante. Busca concentracion, buena tecnica y ritmo estable.',
+    'Bloque de rendimiento' =>
+      'Usa este bloque para perseguir calidad real: una serie buena vale mas que volumen desordenado.',
+    'Finisher' =>
+      'Cierra con intensidad corta. Debe sentirse exigente pero controlable.',
+    'Salida de recuperacion' =>
+      'Baja pulsaciones, recupera movilidad y termina mejor de lo que empezaste.',
+    'Checklist tecnico' =>
+      'Revisa postura, respiracion y el patron tecnico que quieres repetir mejor.',
+    _ =>
+      'Ejecuta este bloque con atencion y usa la consigna tecnica principal como guia.',
   };
 }
 
 String _cueForBlock(String title, String style) {
   final base = switch (title) {
     'Activacion' => 'Movilidad limpia, respiracion y control de postura.',
-    'Bloque principal' => 'Rango estable, tecnica consistente y descansos medidos.',
-    'Bloque de rendimiento' => 'Que no se rompa la tecnica cuando sube el esfuerzo.',
+    'Bloque principal' =>
+      'Rango estable, tecnica consistente y descansos medidos.',
+    'Bloque de rendimiento' =>
+      'Que no se rompa la tecnica cuando sube el esfuerzo.',
     'Finisher' => 'Respira y manten tension sin perder forma.',
     'Salida de recuperacion' => 'Baja intensidad y recupera control.',
     _ => 'Usa una sola consigna tecnica y repitela durante todo el bloque.',
@@ -1052,9 +1963,11 @@ String _fallbackForBlock(String title) {
   return switch (title) {
     'Activacion' => 'Haz una version de 3 minutos y entra al bloque principal.',
     'Bloque principal' => 'Reduce una serie o una variante, pero no lo saltes.',
-    'Bloque de rendimiento' => 'Haz menos repeticiones o una sola serie de calidad.',
+    'Bloque de rendimiento' =>
+      'Haz menos repeticiones o una sola serie de calidad.',
     'Finisher' => 'Cortalo a la mitad o cambialo por una caminata rapida.',
-    'Salida de recuperacion' => 'Haz al menos 2 minutos de respiracion y movilidad.',
+    'Salida de recuperacion' =>
+      'Haz al menos 2 minutos de respiracion y movilidad.',
     _ => 'Mantente con una version corta pero coherente del bloque.',
   };
 }

@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1
 
 COPY app ./app
 COPY tests ./tests
+COPY scripts ./scripts
 COPY pyproject.toml README.md ./
 COPY .env.example ./.env.example
 

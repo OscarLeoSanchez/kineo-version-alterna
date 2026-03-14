@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -7,6 +9,10 @@ class WorkoutExercisePlan(BaseModel):
     reps: str
     rest: str
     notes: str = ""
+    muscle_group: Optional[str] = None
+    location: Optional[str] = None  # "Gimnasio", "Casa", "Mixto"
+    substitutions: list[str] = []
+    image_url: Optional[str] = None
 
 
 class WorkoutBlockPlan(BaseModel):
@@ -37,6 +43,15 @@ class MealOptionPlan(BaseModel):
     ingredients: list[str] = Field(default_factory=list)
     preparation: str
     best_for: str
+    calories_kcal: Optional[int] = None
+    protein_g: Optional[int] = None
+    carbs_g: Optional[int] = None
+    fat_g: Optional[int] = None
+    fiber_g: Optional[int] = None
+    cooking_time_minutes: Optional[int] = None
+    ingredients_with_quantities: list[str] = []
+    preparation_steps: list[str] = []
+    allergens: list[str] = []
 
 
 class WeeklyMealPlanEntry(BaseModel):
@@ -47,6 +62,15 @@ class WeeklyMealPlanEntry(BaseModel):
     components: list[str] = Field(default_factory=list)
     preparation: str
     swap_options: list[str] = Field(default_factory=list)
+    calories_kcal: Optional[int] = None
+    protein_g: Optional[int] = None
+    carbs_g: Optional[int] = None
+    fat_g: Optional[int] = None
+    fiber_g: Optional[int] = None
+    cooking_time_minutes: Optional[int] = None
+    ingredients_with_quantities: list[str] = []
+    preparation_steps: list[str] = []
+    allergens: list[str] = []
 
 
 class MealSlotPlan(BaseModel):
@@ -57,6 +81,7 @@ class MealSlotPlan(BaseModel):
 
 
 class GeneratedProgram(BaseModel):
+    schema_version: int = 2
     plan_name: str
     workout_focus: str
     workout_summary: str

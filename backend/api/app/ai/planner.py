@@ -34,7 +34,18 @@ class OpenAIPlanningProvider(AIPlanningProvider):
                             "text": (
                                 "Eres un coach de fitness y nutricion clinicamente prudente. "
                                 "Debes devolver exclusivamente JSON valido y util para una app movil. "
-                                "El plan debe ser realista, altamente personalizado y accionable."
+                                "El plan debe ser realista, altamente personalizado y accionable. "
+                                "Para cada ejercicio de entrenamiento: incluye muscle_group (ej. 'Pecho y triceps'), "
+                                "location ('Gimnasio', 'Casa', o 'Mixto' segun el equipo disponible), "
+                                "substitutions (lista de 2-3 ejercicios alternativos como strings), "
+                                "e image_url como null. "
+                                "Para cada opcion de comida y entrada del plan semanal: incluye macros reales como enteros "
+                                "en calories_kcal, protein_g, carbs_g, fat_g, fiber_g; "
+                                "cooking_time_minutes como entero; "
+                                "ingredients_with_quantities como lista de strings en espanol con cantidades metricas "
+                                "(ej. '200g pechuga de pollo', '1 taza arroz integral'); "
+                                "preparation_steps como lista de strings, cada uno una oracion completa describiendo un paso; "
+                                "allergens como lista de strings con alergenos presentes si aplica (ej. 'gluten', 'lacteos', 'huevo')."
                             ),
                         }
                     ],
@@ -53,6 +64,9 @@ class OpenAIPlanningProvider(AIPlanningProvider):
                                 "4) weekly_plan debe cubrir 7 dias para cada meal slot. "
                                 "5) El plan debe respetar restricciones, equipo, preferencias y notas adicionales. "
                                 "6) No uses lenguaje medico, no prometas resultados y no incluyas texto fuera del JSON. "
+                                "7) Para cada ejercicio: rellena muscle_group, location, substitutions (2-3 items) e image_url null. "
+                                "8) Para cada opcion de comida y entrada semanal: rellena calories_kcal, protein_g, carbs_g, fat_g, fiber_g, "
+                                "cooking_time_minutes, ingredients_with_quantities, preparation_steps y allergens. "
                                 f"Perfil del usuario: {json.dumps(profile_context, ensure_ascii=True)}"
                             ),
                         }
@@ -124,6 +138,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "40 seg",
                                         "rest": "20 seg",
                                         "notes": "Controla respiracion y rango.",
+                                        "muscle_group": "Cuerpo completo",
+                                        "location": "Mixto",
+                                        "substitutions": ["Movilidad de tobillo", "Rotacion de hombros"],
+                                        "image_url": None,
                                     },
                                     {
                                         "name": "Activacion de core",
@@ -131,6 +149,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "8 por lado",
                                         "rest": "30 seg",
                                         "notes": "Mantener pelvis estable.",
+                                        "muscle_group": "Core y abdomen",
+                                        "location": "Mixto",
+                                        "substitutions": ["Plancha frontal", "Bird dog", "Dead bug"],
+                                        "image_url": None,
                                     },
                                 ],
                             },
@@ -146,6 +168,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "8 a 10",
                                         "rest": "75 seg",
                                         "notes": "Escoge una variante segura si aparece molestia.",
+                                        "muscle_group": "Cuadriceps y gluteos",
+                                        "location": "Mixto",
+                                        "substitutions": ["Sentadilla goblet", "Zancada reversa", "Step-up"],
+                                        "image_url": None,
                                     },
                                     {
                                         "name": "Empuje superior",
@@ -153,6 +179,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "8 a 12",
                                         "rest": "75 seg",
                                         "notes": f"Evita rangos agresivos si hay {restriction_note}.",
+                                        "muscle_group": "Pecho y triceps",
+                                        "location": "Mixto",
+                                        "substitutions": ["Flexiones", "Press con mancuernas", "Press inclinado"],
+                                        "image_url": None,
                                     },
                                     {
                                         "name": "Traccion superior",
@@ -160,6 +190,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "10 a 12",
                                         "rest": "60 seg",
                                         "notes": "Busca control escapular.",
+                                        "muscle_group": "Espalda y biceps",
+                                        "location": "Mixto",
+                                        "substitutions": ["Remo con mancuerna", "Jala polea", "Face pull"],
+                                        "image_url": None,
                                     },
                                 ],
                             },
@@ -175,6 +209,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "40 seg",
                                         "rest": "20 seg",
                                         "notes": "Sustituye por caminata si el dia viene muy pesado.",
+                                        "muscle_group": "Cuerpo completo",
+                                        "location": "Mixto",
+                                        "substitutions": ["Jumping jacks", "Burpees modificados", "Caminata a paso rapido"],
+                                        "image_url": None,
                                     }
                                 ],
                             },
@@ -209,6 +247,10 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                                         "reps": "20 min",
                                         "rest": "-",
                                         "notes": "Mantener percepcion de esfuerzo baja.",
+                                        "muscle_group": "Cuerpo completo",
+                                        "location": "Mixto",
+                                        "substitutions": ["Yoga suave", "Estiramientos", "Natacion tranquila"],
+                                        "image_url": None,
                                     }
                                 ],
                             }
@@ -223,12 +265,13 @@ class DeterministicPlanningProvider(AIPlanningProvider):
         for slot in slot_titles:
             option_bank = []
             weekly_plan = []
+            is_snack = slot == "Snack"
             for option_index in range(10):
                 option_bank.append(
                     {
                         "name": f"{slot} opcion {option_index + 1}",
                         "summary": f"Opcion {meal_style} pensada para {slot.lower()} con buena adherencia.",
-                        "macros": "35P / 45C / 15G" if slot != "Snack" else "20P / 20C / 8G",
+                        "macros": "35P / 45C / 15G" if not is_snack else "20P / 20C / 8G",
                         "ingredients": [
                             "Proteina principal",
                             "Carbohidrato util",
@@ -237,21 +280,56 @@ class DeterministicPlanningProvider(AIPlanningProvider):
                         ],
                         "preparation": f"Preparacion simple de 10 a 20 minutos para {slot.lower()}.",
                         "best_for": "Dias de entrenamiento" if option_index % 2 == 0 else "Dias de descanso",
+                        "calories_kcal": 180 if is_snack else 450,
+                        "protein_g": 20 if is_snack else 35,
+                        "carbs_g": 20 if is_snack else 45,
+                        "fat_g": 8 if is_snack else 15,
+                        "fiber_g": 3 if is_snack else 7,
+                        "cooking_time_minutes": 5 if is_snack else 15,
+                        "ingredients_with_quantities": [
+                            "150g proteina principal",
+                            "1 taza carbohidrato cocido",
+                            "100g vegetales mixtos",
+                            "1 cucharada aceite de oliva",
+                        ] if not is_snack else [
+                            "1 unidad fruta o yogur",
+                            "30g proteina (queso cottage o similar)",
+                        ],
+                        "preparation_steps": [
+                            "Preparar y porcionar los ingredientes.",
+                            "Cocinar la proteina a fuego medio hasta que este lista.",
+                            "Agregar los vegetales y cocinar 5 minutos mas.",
+                            "Servir y condimentar al gusto.",
+                        ] if not is_snack else [
+                            "Preparar los ingredientes.",
+                            "Mezclar o servir directamente.",
+                        ],
+                        "allergens": [],
                     }
                 )
             for day_index, day_label in enumerate(weekday_names):
+                ref = option_bank[day_index % 10]
                 weekly_plan.append(
                     {
                         "day_label": day_label,
-                        "meal_name": option_bank[day_index % 10]["name"],
+                        "meal_name": ref["name"],
                         "detail": f"{slot} estructurado para {day_label.lower()} con foco en adherencia.",
-                        "macros": option_bank[day_index % 10]["macros"],
-                        "components": option_bank[day_index % 10]["ingredients"],
-                        "preparation": option_bank[day_index % 10]["preparation"],
+                        "macros": ref["macros"],
+                        "components": ref["ingredients"],
+                        "preparation": ref["preparation"],
                         "swap_options": [
                             option_bank[(day_index + 1) % 10]["name"],
                             option_bank[(day_index + 2) % 10]["name"],
                         ],
+                        "calories_kcal": ref["calories_kcal"],
+                        "protein_g": ref["protein_g"],
+                        "carbs_g": ref["carbs_g"],
+                        "fat_g": ref["fat_g"],
+                        "fiber_g": ref["fiber_g"],
+                        "cooking_time_minutes": ref["cooking_time_minutes"],
+                        "ingredients_with_quantities": ref["ingredients_with_quantities"],
+                        "preparation_steps": ref["preparation_steps"],
+                        "allergens": ref["allergens"],
                     }
                 )
             meal_slots.append(

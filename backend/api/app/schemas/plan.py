@@ -15,3 +15,12 @@ class InitialPlanRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PlanHistoryItemRead(BaseModel):
+    id: int
+    profile_id: int
+    workout_focus: str
+    created_at: datetime
+    week_label: str
+    is_current: bool = False

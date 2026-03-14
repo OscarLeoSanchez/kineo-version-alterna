@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../activity/data/services/activity_history_api_service.dart';
+import '../../../../shared/widgets/activity_record_detail_sheet.dart';
 import '../../../../shared/widgets/app_section_title.dart';
-import '../../../../shared/widgets/app_surface_card.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -57,7 +57,8 @@ class _HistoryPageState extends State<HistoryPage> {
             children: [
               const AppSectionTitle(
                 title: 'Explorar historial',
-                subtitle: 'Filtra por tipo de registro y revisa tu traza completa.',
+                subtitle:
+                    'Filtra por tipo de registro y revisa tu traza completa.',
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -74,43 +75,143 @@ class _HistoryPageState extends State<HistoryPage> {
               if (workouts.isNotEmpty) ...[
                 const AppSectionTitle(title: 'Workout'),
                 const SizedBox(height: 12),
-                ...workouts.map((entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: AppSurfaceCard(
+                ...workouts.map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () =>
+                          _showWorkoutDetail(entry as Map<String, dynamic>),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFD8D1C4)),
+                        ),
                         child: Text(
                           '${entry['focus']} · ${entry['session_minutes']} min · ${(entry['completed_at']?.toString() ?? '').split('T').first}',
                         ),
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               ],
               if (nutrition.isNotEmpty) ...[
                 const AppSectionTitle(title: 'Nutricion'),
                 const SizedBox(height: 12),
-                ...nutrition.map((entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: AppSurfaceCard(
+                ...nutrition.map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () =>
+                          _showNutritionDetail(entry as Map<String, dynamic>),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFD8D1C4)),
+                        ),
                         child: Text(
                           '${entry['meal_label']} · ${entry['adherence_score']}% · ${(entry['logged_at']?.toString() ?? '').split('T').first}',
                         ),
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               ],
               if (body.isNotEmpty) ...[
                 const AppSectionTitle(title: 'Metricas'),
                 const SizedBox(height: 12),
-                ...body.map((entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: AppSurfaceCard(
+                ...body.map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () =>
+                          _showBodyDetail(entry as Map<String, dynamic>),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFD8D1C4)),
+                        ),
                         child: Text(
                           '${entry['weight_kg']} kg · ${(entry['recorded_at']?.toString() ?? '').split('T').first}',
                         ),
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               ],
             ],
           );
         },
       ),
+    );
+  }
+
+  void _showWorkoutDetail(Map<String, dynamic> entry) {
+    final noteParts = (entry['notes']?.toString() ?? '')
+        .split('|')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    showActivityRecordDetailSheet(
+      context,
+      title: entry['focus']?.toString() ?? 'Sesion workout',
+      subtitle: (entry['completed_at']?.toString() ?? '').split('T').first,
+      details: [
+        MapEntry('Duracion', '${entry['session_minutes'] ?? 0} min'),
+        MapEntry('Energia', entry['energy_level']?.toString() ?? '-'),
+        if ((entry['day_iso_date']?.toString() ?? '').isNotEmpty)
+          MapEntry('Dia del plan', entry['day_iso_date']?.toString() ?? ''),
+        ...noteParts
+            .take(3)
+            .toList()
+            .asMap()
+            .entries
+            .map((item) => MapEntry('Registro ${item.key + 1}', item.value)),
+      ],
+      notes: noteParts.length > 3 ? noteParts.skip(3).join('\n') : null,
+      radius: 10,
+    );
+  }
+
+  void _showNutritionDetail(Map<String, dynamic> entry) {
+    showActivityRecordDetailSheet(
+      context,
+      title: entry['meal_label']?.toString() ?? 'Registro nutricional',
+      subtitle: (entry['logged_at']?.toString() ?? '').split('T').first,
+      details: [
+        MapEntry('Adherencia', '${entry['adherence_score'] ?? 0}%'),
+        MapEntry('Proteina', '${entry['protein_grams'] ?? 0} g'),
+        MapEntry('Hidratacion', '${entry['hydration_liters'] ?? 0} L'),
+      ],
+      notes: entry['notes']?.toString(),
+      radius: 10,
+    );
+  }
+
+  void _showBodyDetail(Map<String, dynamic> entry) {
+    showActivityRecordDetailSheet(
+      context,
+      title: 'Medicion corporal',
+      subtitle: (entry['recorded_at']?.toString() ?? '').split('T').first,
+      details: [
+        MapEntry('Peso', '${entry['weight_kg'] ?? '-'} kg'),
+        if (entry['waist_cm'] != null)
+          MapEntry('Cintura', '${entry['waist_cm']} cm'),
+        if (entry['body_fat_percentage'] != null)
+          MapEntry('Grasa corporal', '${entry['body_fat_percentage']} %'),
+        if (entry['sleep_hours'] != null)
+          MapEntry('Sueño', '${entry['sleep_hours']} h'),
+        if (entry['steps'] != null) MapEntry('Pasos', '${entry['steps']}'),
+      ],
+      radius: 10,
     );
   }
 }

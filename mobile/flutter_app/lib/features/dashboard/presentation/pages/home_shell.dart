@@ -7,6 +7,11 @@ import '../../../progress/presentation/pages/progress_page.dart';
 import '../../../subscription/presentation/pages/subscription_page.dart';
 import '../../../workout/presentation/pages/workout_page.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../core/services/session_data_cache.dart';
+import '../../../activity/data/services/activity_history_api_service.dart';
+import '../../../plans/data/services/plan_api_service.dart';
+import '../../../nutrition/data/services/nutrition_api_service.dart';
+import '../../../workout/data/services/workout_api_service.dart';
 import 'dashboard_page.dart';
 
 class HomeShellPage extends StatefulWidget {
@@ -71,6 +76,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
     super.initState();
     _pageController = PageController();
     _loadProfileStatus();
+    _warmUpPrimaryData();
   }
 
   @override
@@ -111,6 +117,28 @@ class _HomeShellPageState extends State<HomeShellPage> {
       setState(() {
         _loadingProfile = false;
       });
+    }
+  }
+
+  Future<void> _warmUpPrimaryData() async {
+    final cache = SessionDataCache.instance;
+    if (cache.hasWorkoutBundle) {
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        const WorkoutApiService().fetchWorkoutSummary(),
+        const NutritionApiService().fetchNutritionSummary(),
+        const ActivityHistoryApiService().fetchHistory(),
+        const PlanApiService().fetchPlanHistory(),
+      ]);
+      cache
+        ..workoutSummary = results[0] as Map<String, dynamic>
+        ..nutritionSummary = results[1] as Map<String, dynamic>
+        ..history = results[2] as Map<String, dynamic>
+        ..planHistory = results[3] as List<Map<String, dynamic>>;
+    } catch (_) {
+      // keep shell responsive; pages fall back to their own loading path
     }
   }
 
@@ -200,7 +228,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
           ],
         ),
       ),
-      floatingActionButton: _selectedIndex == 0 && !_loadingProfile && !_hasProfile
+      floatingActionButton:
+          _selectedIndex == 0 && !_loadingProfile && !_hasProfile
           ? FloatingActionButton.extended(
               onPressed: () async {
                 final result = await Navigator.of(
@@ -250,9 +279,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
 }
 
 class _ShellStage extends StatelessWidget {
-  const _ShellStage({
-    required this.child,
-  });
+  const _ShellStage({required this.child});
 
   final Widget child;
 

@@ -1,13 +1,60 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 
-import '../../../activity/data/services/activity_history_api_service.dart';
-import '../../../profile/data/services/profile_preferences_store.dart';
-import '../../../profile/domain/models/profile_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../../core/services/session_data_cache.dart';
+import '../../../../shared/widgets/activity_record_detail_sheet.dart';
 import '../../../../shared/widgets/app_section_title.dart';
-import '../../../../shared/widgets/app_surface_card.dart';
-import '../../../../shared/widgets/metric_pill.dart';
-import '../../data/services/nutrition_api_service.dart';
-import '../../data/services/nutrition_log_api_service.dart';
+import '../../../../shared/widgets/shimmer_box.dart';
+import '../../../../shared/widgets/pressable_card.dart';
+import '../../../activity/data/services/activity_history_api_service.dart';
+import '../../../nutrition/data/services/nutrition_api_service.dart';
+import '../../../nutrition/data/services/nutrition_log_api_service.dart';
+import '../../../nutrition/data/services/nutrition_photo_api_service.dart';
+import '../../../nutrition/presentation/widgets/nutrition_detail_sheet.dart';
+import '../../../nutrition/presentation/widgets/nutrition_log_confirmation_sheet.dart';
+import '../../../profile/data/services/profile_preferences_store.dart';
+
+// ─── Brand colors ─────────────────────────────────────────────────────────────
+const _kBrand = Color(0xFF143C3A);
+const _kBrandLight = Color(0xFFE7EFEA);
+const _kAmber = Color(0xFFF59E0B);
+const _kAmberLight = Color(0xFFFEF3C7);
+const _kGreen = Color(0xFF2E7D52);
+const _kGreenLight = Color(0xFFD6EEE6);
+const _kGrey = Color(0xFFD8D1C4);
+
+// ─── Meal type helpers ─────────────────────────────────────────────────────────
+IconData _mealIcon(String label) {
+  switch (label.toLowerCase()) {
+    case 'desayuno':
+      return Icons.wb_sunny_outlined;
+    case 'almuerzo':
+      return Icons.lunch_dining_outlined;
+    case 'cena':
+      return Icons.nightlight_outlined;
+    default:
+      return Icons.apple_outlined;
+  }
+}
+
+Color _mealColor(String label) {
+  switch (label.toLowerCase()) {
+    case 'desayuno':
+      return const Color(0xFFFFF3E0);
+    case 'almuerzo':
+      return const Color(0xFFE8F5E9);
+    case 'cena':
+      return const Color(0xFFE8EAF6);
+    default:
+      return const Color(0xFFFCE4EC);
+  }
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
 
 class NutritionPage extends StatefulWidget {
   const NutritionPage({super.key});
@@ -16,183 +63,590 @@ class NutritionPage extends StatefulWidget {
   State<NutritionPage> createState() => _NutritionPageState();
 }
 
-class _NutritionPageState extends State<NutritionPage> {
-  late Future<_NutritionViewData> _future;
-  double _adherenceScore = 85;
+class _NutritionPageState extends State<NutritionPage>
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+  _NutritionViewData? _viewData;
+  bool _isInitialLoading = true;
   bool _isSubmitting = false;
-  String _dayType = 'Desayuno';
-  final TextEditingController _proteinController = TextEditingController(
-    text: '140',
-  );
-  final TextEditingController _hydrationController = TextEditingController(
-    text: '3',
-  );
-  final TextEditingController _notesController = TextEditingController();
+  bool _showShimmer = false;
+  Timer? _shimmerTimer;
+
+  int? _selectedDayIndex;
+  String _mealLabel = 'Almuerzo';
+
+  // Photo analysis overlay
+  bool _isAnalyzingPhoto = false;
+  late AnimationController _analyzeSpinController;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadNutrition();
+    _analyzeSpinController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+
+    final cache = SessionDataCache.instance;
+    if (cache.nutritionSummary != null && cache.history != null) {
+      _viewData = _NutritionViewData(
+        summary: cache.nutritionSummary!,
+        history: cache.history!,
+        coachingStyle: 'Equilibrado',
+      );
+      _isInitialLoading = false;
+      _hydratePrefs();
+      _refreshSilently();
+    } else {
+      // Delay shimmer so fast loads don't flash
+      _shimmerTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted && _isInitialLoading) {
+          setState(() => _showShimmer = true);
+        }
+      });
+      _bootstrap();
+    }
   }
 
   @override
   void dispose() {
-    _proteinController.dispose();
-    _hydrationController.dispose();
-    _notesController.dispose();
+    _shimmerTimer?.cancel();
+    _analyzeSpinController.dispose();
     super.dispose();
+  }
+
+  // ── Data loading ────────────────────────────────────────────────────────────
+
+  Future<void> _hydratePrefs() async {
+    final prefs = await ProfilePreferencesStore().load();
+    if (!mounted || _viewData == null) return;
+    setState(() {
+      _viewData = _viewData!.copyWith(coachingStyle: prefs.coachingStyle);
+    });
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final data = await _loadNutrition();
+      if (!mounted) return;
+      setState(() {
+        _viewData = data;
+        _isInitialLoading = false;
+        _showShimmer = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _showShimmer = false;
+      });
+    }
   }
 
   Future<_NutritionViewData> _loadNutrition() async {
     final results = await Future.wait([
       const NutritionApiService().fetchNutritionSummary(),
       const ActivityHistoryApiService().fetchHistory(),
+      ProfilePreferencesStore().load(),
     ]);
+    final summary = Map<String, dynamic>.from(results[0] as Map<String, dynamic>);
+    final history = Map<String, dynamic>.from(results[1] as Map<String, dynamic>);
+    SessionDataCache.instance
+      ..nutritionSummary = summary
+      ..history = history;
+    final prefs = results[2] as dynamic;
     return _NutritionViewData(
-      summary: results[0],
-      history: results[1],
-      preferences: await ProfilePreferencesStore().load(),
+      summary: summary,
+      history: history,
+      coachingStyle: prefs.coachingStyle,
     );
   }
 
-  Future<void> _submitNutrition() async {
-    final noteController = TextEditingController(text: _notesController.text);
-    var adherenceScore = _adherenceScore;
-    var hungerLevel = 'Media';
-    var satiety = 'Buena';
-    var usedSwap = false;
+  Future<void> _refreshSilently() async {
+    try {
+      final data = await _loadNutrition();
+      if (!mounted) return;
+      setState(() => _viewData = data);
+    } catch (_) {}
+  }
 
-    final confirmed = await showModalBottomSheet<bool>(
+  // ── Computed helpers ─────────────────────────────────────────────────────────
+
+  Map<String, dynamic>? get _selectedDay {
+    final days = (_viewData?.summary['weekly_days'] as List<dynamic>? ?? []);
+    if (days.isEmpty) return null;
+    final baseIndex =
+        _selectedDayIndex ?? (_viewData?.summary['selected_day_index'] as int? ?? 0);
+    final safeIndex = baseIndex.clamp(0, days.length - 1);
+    return Map<String, dynamic>.from(days[safeIndex] as Map);
+  }
+
+  List<Map<String, dynamic>> get _mealsForSelectedDay {
+    final meals = (_selectedDay?['meals'] as List<dynamic>? ?? []);
+    return meals.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  List<Map<String, dynamic>> get _nutritionHistory {
+    final items = (_viewData?.history['nutrition_logs'] as List<dynamic>? ?? []);
+    return items.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  List<Map<String, dynamic>> _logsForDay(String isoDate) {
+    return _nutritionHistory.where((entry) {
+      final loggedDate = (entry['logged_at']?.toString() ?? '').split('T').first.trim();
+      return loggedDate == isoDate;
+    }).toList();
+  }
+
+  Map<String, dynamic>? _matchLogForMeal(String isoDate, Map<String, dynamic> meal) {
+    final targetTitle = _normalizeMealLabel(meal['title']?.toString() ?? '');
+    for (final entry in _logsForDay(isoDate)) {
+      if (_normalizeMealLabel(entry['meal_label']?.toString() ?? '') == targetTitle) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+
+  Future<void> _submitNutrition({
+    required String mealLabel,
+    required int adherence,
+    required int proteinGrams,
+    required int hydrationLiters,
+    String notes = '',
+  }) async {
+    setState(() => _isSubmitting = true);
+    try {
+      final result = await const NutritionLogApiService().submitNutrition(
+        mealLabel: mealLabel,
+        adherenceScore: adherence,
+        proteinGrams: proteinGrams,
+        hydrationLiters: hydrationLiters,
+        notes: notes,
+      );
+      if (!mounted) return;
+      showNutritionLogConfirmationSheet(
+        context,
+        mealLabel: mealLabel,
+        adherenceScore: adherence,
+        hydrationLiters: hydrationLiters.toDouble(),
+      );
+      if (result.sent || result.queuedOffline) _refreshSilently();
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _openManualRegistration() async {
+    final nameController = TextEditingController();
+    final kcalController = TextEditingController();
+    final proteinController = TextEditingController(text: '30');
+    final hydrationController = TextEditingController(text: '1');
+    final notesController = TextEditingController();
+    double adherence = 85;
+    String mealLabel = _mealLabel;
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
-            return _NutritionSheet(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Cerrar registro nutricional',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Deja claro que comida resolviste, como te fue y si hiciste algun ajuste.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: _dayType,
-                    decoration: const InputDecoration(
-                      labelText: 'Comida o momento',
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Desayuno', child: Text('Desayuno')),
-                      DropdownMenuItem(value: 'Almuerzo', child: Text('Almuerzo')),
-                      DropdownMenuItem(value: 'Cena', child: Text('Cena')),
-                      DropdownMenuItem(value: 'Snack', child: Text('Snack')),
-                      DropdownMenuItem(
-                        value: 'Dia completo',
-                        child: Text('Dia completo'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        _dayType = value ?? 'Desayuno';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Cumplimiento: ${adherenceScore.round()}%',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Slider(
-                    value: adherenceScore,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: adherenceScore.round().toString(),
-                    onChanged: (value) {
-                      setModalState(() {
-                        adherenceScore = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: hungerLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Llegaste con hambre',
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-                      DropdownMenuItem(value: 'Media', child: Text('Media')),
-                      DropdownMenuItem(value: 'Baja', child: Text('Baja')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        hungerLevel = value ?? 'Media';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: satiety,
-                    decoration: const InputDecoration(
-                      labelText: 'Como quedaste despues',
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Excelente', child: Text('Excelente')),
-                      DropdownMenuItem(value: 'Buena', child: Text('Buena')),
-                      DropdownMenuItem(value: 'Insuficiente', child: Text('Insuficiente')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        satiety = value ?? 'Buena';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: usedSwap,
-                    title: const Text('Use una alternativa o sustitucion'),
-                    subtitle: const Text('Activalo si no comiste exactamente la opcion sugerida.'),
-                    onChanged: (value) {
-                      setModalState(() {
-                        usedSwap = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Observacion del registro',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Material(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          child: const Text('Cancelar'),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.black12,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Registrar comida',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 14),
+                      _mealLabelChips(
+                        current: mealLabel,
+                        onChanged: (v) => setSheetState(() => mealLabel = v),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Nombre de la comida'),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: kcalController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(labelText: 'Calorías aprox.'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: proteinController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(labelText: 'Proteína (g)'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: hydrationController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(labelText: 'Agua (L)'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Adherencia ${adherence.round()}%'),
+                                Slider(
+                                  value: adherence,
+                                  min: 40,
+                                  max: 100,
+                                  divisions: 12,
+                                  onChanged: (v) => setSheetState(() => adherence = v),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      TextField(
+                        controller: notesController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notas / ingredientes / preparación',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () async {
+                                Navigator.of(context).pop();
+                                final extra = [
+                                  if (nameController.text.trim().isNotEmpty)
+                                    nameController.text.trim(),
+                                  if (kcalController.text.trim().isNotEmpty)
+                                    '${kcalController.text.trim()} kcal',
+                                  if (notesController.text.trim().isNotEmpty)
+                                    notesController.text.trim(),
+                                ].join(' | ');
+                                await _submitNutrition(
+                                  mealLabel: mealLabel,
+                                  adherence: adherence.round(),
+                                  proteinGrams:
+                                      int.tryParse(proteinController.text.trim()) ?? 25,
+                                  hydrationLiters:
+                                      int.tryParse(hydrationController.text.trim()) ?? 1,
+                                  notes: extra,
+                                );
+                              },
+                              child: const Text('Guardar'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openPhotoAnalysisFlow() async {
+    // Step 1 — source picker
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Material(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Text(
+                  'Analizar comida con IA',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SourceOptionButton(
+                        icon: Icons.photo_camera_rounded,
+                        label: 'Cámara',
+                        onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _SourceOptionButton(
+                        icon: Icons.photo_library_rounded,
+                        label: 'Galería',
+                        onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    // Step 2 — pick image
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 82);
+    if (picked == null || !mounted) return;
+
+    // Step 3 — show full-screen analyzing overlay
+    setState(() => _isAnalyzingPhoto = true);
+
+    Map<String, dynamic>? result;
+    String? errorMsg;
+    try {
+      result = await const NutritionPhotoApiService().analyzePhoto(
+        mealLabel: _mealLabel,
+        filePath: picked.path,
+      );
+    } catch (e) {
+      errorMsg = e.toString();
+    }
+
+    if (!mounted) return;
+    setState(() => _isAnalyzingPhoto = false);
+
+    if (errorMsg != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo analizar la foto: $errorMsg'),
+          action: SnackBarAction(label: 'Reintentar', onPressed: _openPhotoAnalysisFlow),
+        ),
+      );
+      return;
+    }
+
+    if (result == null) return;
+
+    // Step 4 — rich result sheet
+    await _showPhotoResultSheet(picked.path, result);
+  }
+
+  Future<void> _showPhotoResultSheet(String imagePath, Map<String, dynamic> result) async {
+    final detectedItems = (result['detected_items'] as List<dynamic>? ?? []).cast<String>();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.52,
+          maxChildSize: 0.96,
+          expand: false,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              color: Theme.of(context).colorScheme.surface,
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  // Photo + dish name header
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.file(
+                          File(imagePath),
+                          width: 88,
+                          height: 88,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
                       Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          child: const Text('Guardar registro'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              result['detected_dish_name']?.toString() ?? 'Comida detectada',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            if ((result['serving_hint']?.toString() ?? '').isNotEmpty)
+                              Text(
+                                result['serving_hint'].toString(),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Colors.black54),
+                              ),
+                          ],
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Macro chips
+                  _MacroRow(
+                    kcal: result['estimated_calories_kcal'],
+                    protein: result['estimated_protein_g'],
+                    carbs: result['estimated_carbs_g'],
+                    fat: result['estimated_fat_g'],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Detected items
+                  if (detectedItems.isNotEmpty) ...[
+                    Text(
+                      'INGREDIENTES DETECTADOS',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.black45,
+                            letterSpacing: 0.8,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: detectedItems
+                          .map(
+                            (item) => Chip(
+                              label: Text(item),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // Confidence note
+                  if ((result['confidence_note']?.toString() ?? '').isNotEmpty) ...[
+                    Text(
+                      result['confidence_note'].toString(),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.black54),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
+                  // Coach note
+                  if ((result['coach_note']?.toString() ?? '').isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _kGreenLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        result['coach_note'].toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Action buttons
+                  FilledButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _submitNutrition(
+                        mealLabel: _mealLabel,
+                        adherence: 88,
+                        proteinGrams:
+                            (result['estimated_protein_g'] as num?)?.round() ?? 25,
+                        hydrationLiters: 1,
+                        notes:
+                            'Foto IA | ${result['detected_dish_name']} | ${result['estimated_calories_kcal']} kcal | ${detectedItems.join(', ')}',
+                      );
+                    },
+                    child: const Text('Registrar esta comida'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _openPhotoAnalysisFlow();
+                    },
+                    child: const Text('Intentar de nuevo'),
                   ),
                 ],
               ),
@@ -201,736 +655,1581 @@ class _NutritionPageState extends State<NutritionPage> {
         );
       },
     );
-
-    final notes = [
-      'Hambre: $hungerLevel',
-      'Saciedad: $satiety',
-      'Sustitucion: ${usedSwap ? 'Si' : 'No'}',
-      if (noteController.text.trim().isNotEmpty) noteController.text.trim(),
-    ].join(' | ');
-    noteController.dispose();
-
-    if (confirmed != true) {
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      await const NutritionLogApiService().submitNutrition(
-        mealLabel: _dayType,
-        adherenceScore: adherenceScore.round(),
-        proteinGrams: int.tryParse(_proteinController.text) ?? 140,
-        hydrationLiters: int.tryParse(_hydrationController.text) ?? 3,
-        notes: notes,
-      );
-      _notesController.clear();
-      setState(() {
-        _adherenceScore = adherenceScore;
-        _future = _loadNutrition();
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nutricion registrada correctamente.')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pudimos guardar tu registro.')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
   }
 
-  Future<void> _editNutrition(Map<String, dynamic> item) async {
-    final mealController = TextEditingController(
-      text: item['meal_label']?.toString() ?? '',
+  void _showHistoryDetail(Map<String, dynamic> entry) {
+    showActivityRecordDetailSheet(
+      context,
+      title: entry['meal_label']?.toString() ?? 'Registro nutricional',
+      subtitle: (entry['logged_at']?.toString() ?? '').split('T').first,
+      details: [
+        MapEntry('Adherencia', '${entry['adherence_score'] ?? 0}%'),
+        MapEntry('Proteína', '${entry['protein_grams'] ?? 0} g'),
+        MapEntry('Hidratación', '${entry['hydration_liters'] ?? 0} L'),
+      ],
+      notes: entry['notes']?.toString(),
+      radius: 8,
     );
-    final proteinController = TextEditingController(
-      text: '${item['protein_grams'] ?? 140}',
-    );
-    final hydrationController = TextEditingController(
-      text: '${item['hydration_liters'] ?? 3}',
-    );
-    final notesController = TextEditingController(
-      text: item['notes']?.toString() ?? '',
-    );
-    double adherence = (item['adherence_score'] as num?)?.toDouble() ?? 80;
+  }
 
-    final confirmed = await showDialog<bool>(
+  void _openDayDetail(Map<String, dynamic> day) {
+    final meals = (day['meals'] as List<dynamic>? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    final isoDate = day['iso_date']?.toString() ?? '';
+    final dayLogs = _logsForDay(isoDate);
+    showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Editar registro'),
-          content: StatefulBuilder(
-            builder: (context, setModalState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
+        return DraggableScrollableSheet(
+          initialChildSize: 0.78,
+          minChildSize: 0.48,
+          maxChildSize: 0.96,
+          expand: false,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              color: Theme.of(context).colorScheme.surface,
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
                 children: [
-                  TextField(
-                    controller: mealController,
-                    decoration: const InputDecoration(labelText: 'Etiqueta'),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: proteinController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Proteina (g)'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: hydrationController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Hidratacion'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: notesController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Notas'),
-                  ),
-                  const SizedBox(height: 12),
-                  Slider(
-                    value: adherence,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: adherence.round().toString(),
-                    onChanged: (value) {
-                      setModalState(() {
-                        adherence = value;
-                      });
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) {
-      mealController.dispose();
-      proteinController.dispose();
-      hydrationController.dispose();
-      notesController.dispose();
-      return;
-    }
-
-    try {
-      await const ActivityHistoryApiService().updateNutrition(
-        id: item['id'] as int,
-        mealLabel: mealController.text,
-        adherenceScore: adherence.round(),
-        proteinGrams: int.tryParse(proteinController.text) ?? 140,
-        hydrationLiters: int.tryParse(hydrationController.text) ?? 3,
-        notes: notesController.text.trim(),
-      );
-      if (!mounted) return;
-      setState(() {
-        _future = _loadNutrition();
-      });
-    } finally {
-      mealController.dispose();
-      proteinController.dispose();
-      hydrationController.dispose();
-      notesController.dispose();
-    }
-  }
-
-  Future<void> _deleteNutrition(int id) async {
-    await const ActivityHistoryApiService().deleteNutrition(id);
-    if (!mounted) return;
-    setState(() {
-      _future = _loadNutrition();
-    });
-  }
-
-  void _showMealDetail(Map<String, dynamic> item) {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(item['title']?.toString() ?? 'Comida'),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item['meal']?.toString() ?? ''),
-                  const SizedBox(height: 12),
                   Text(
-                    item['macros']?.toString() ?? '',
-                    style: Theme.of(context).textTheme.titleMedium,
+                    '${day['day_label'] ?? 'Día'} · ${day['date'] ?? ''}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
                   ),
-                  if (item['objective'] != null) ...[
-                    const SizedBox(height: 12),
-                    Text('Objetivo: ${item['objective']}'),
-                  ],
-                  if (item['detail'] != null) ...[
-                    const SizedBox(height: 8),
-                    Text(item['detail']?.toString() ?? ''),
-                  ],
-                  if ((item['components'] as List<dynamic>? ?? []).isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Componentes sugeridos',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    ...((item['components'] as List<dynamic>).map(
-                      (component) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text('• ${component.toString()}'),
+                  const SizedBox(height: 6),
+                  Text(
+                    dayLogs.isEmpty
+                        ? (day['is_past'] == true
+                            ? 'No hay comidas registradas. Aquí ves lo recomendado.'
+                            : 'Plan sugerido para este día.')
+                        : 'Tienes ${dayLogs.length} registro(s) para este día.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  ...meals.map((meal) {
+                    final log = _matchLogForMeal(isoDate, meal);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _MealTimelineCard(
+                        meal: meal,
+                        log: log,
+                        isPast: day['is_past'] == true,
+                        onTap: () => _showMealDayDetail(day: day, meal: meal, logEntry: log),
                       ),
-                    )),
-                  ],
-                  const SizedBox(height: 12),
-                  Text(_mealIntent(item['title']?.toString() ?? '')),
-                  const SizedBox(height: 8),
-                  Text(_mealSwap(item['title']?.toString() ?? '')),
-                  if ((item['swap_options'] as List<dynamic>? ?? []).isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Alternativas rapidas',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    ...((item['swap_options'] as List<dynamic>).map(
-                      (option) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text('• ${option.toString()}'),
-                      ),
-                    )),
-                  ],
-                  if ((item['weekly_plan'] as List<dynamic>? ?? []).isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Semana para esta comida',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    ...((item['weekly_plan'] as List<dynamic>).map((entry) {
-                      final weekItem = entry as Map<String, dynamic>;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F0E6),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${weekItem['day_label']}: ${weekItem['meal_name']}',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(weekItem['detail']?.toString() ?? ''),
-                            const SizedBox(height: 4),
-                            Text(weekItem['macros']?.toString() ?? ''),
-                          ],
-                        ),
-                      );
-                    })),
-                  ],
-                  if ((item['option_bank'] as List<dynamic>? ?? []).isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Banco de opciones',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    ...((item['option_bank'] as List<dynamic>).map((entry) {
-                      final option = entry as Map<String, dynamic>;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8EFE8),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              option['name']?.toString() ?? '',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(option['summary']?.toString() ?? ''),
-                            const SizedBox(height: 4),
-                            Text(option['macros']?.toString() ?? ''),
-                            const SizedBox(height: 4),
-                            Text('Preparacion: ${option['preparation']}'),
-                          ],
-                        ),
-                      );
-                    })),
-                  ],
+                    );
+                  }),
                 ],
               ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _dayType = item['title']?.toString() ?? 'Desayuno';
-                });
-                Navigator.of(context).pop();
-              },
-              child: const Text('Usar para mi registro'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_NutritionViewData>(
-      future: _future,
-      builder: (context, snapshot) {
-        final viewData = snapshot.data;
-        final data = viewData?.summary;
-        final history = viewData?.history;
-        final macros = data?['macro_focus'] as List<dynamic>? ?? [];
-        final meals = data?['meals'] as List<dynamic>? ?? [];
-        final logs = history?['nutrition_logs'] as List<dynamic>? ?? [];
-        final preferences =
-            viewData?.preferences ?? ProfilePreferences.defaults();
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
-          children: [
-            const AppSectionTitle(
-              title: 'Nutricion',
-              subtitle:
-                  'Una estructura simple, flexible y alineada a tu objetivo.',
-            ),
-            const SizedBox(height: 18),
-            AppSurfaceCard(
-              backgroundColor: const Color(0xFFE9E2D6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  void _showMealDayDetail({
+    required Map<String, dynamic> day,
+    required Map<String, dynamic> meal,
+    Map<String, dynamic>? logEntry,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.86,
+          minChildSize: 0.52,
+          maxChildSize: 0.98,
+          expand: false,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              color: Theme.of(context).colorScheme.surface,
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
                 children: [
-                  Text(
-                    data?['title']?.toString() ?? 'Marco del dia',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 10),
                   Text(
-                    data?['calorie_target']?.toString() ?? '--',
-                    style: Theme.of(context).textTheme.titleLarge,
+                    '${meal['title'] ?? 'Comida'} · ${day['day_label'] ?? ''}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
-                    _nutritionCoachPrompt(preferences.coachingStyle),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: macros
-                  .map((item) => MetricPill(label: item.toString()))
-                  .toList(),
-            ),
-            const SizedBox(height: 20),
-            AppSurfaceCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Adherencia reciente',
+                    meal['meal_name']?.toString() ?? meal['meal']?.toString() ?? '',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${data?['adherence_score'] ?? 0}%',
-                    style: Theme.of(context).textTheme.headlineMedium,
+                  const SizedBox(height: 14),
+                  _MacroRow(
+                    kcal: meal['calories_kcal'],
+                    protein: meal['protein_g'],
+                    carbs: meal['carbs_g'],
+                    fat: meal['fat_g'],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Hidratacion sugerida: ${_formatHydration(3, preferences.units)}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Que vas a registrar ahora?',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _dayType,
-                    decoration: const InputDecoration(
-                      labelText: 'Comida o momento',
+                  const SizedBox(height: 18),
+                  if ((meal['objective']?.toString() ?? '').isNotEmpty) ...[
+                    Text(
+                      'Pensado para ese día',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Desayuno',
-                        child: Text('Desayuno'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Almuerzo',
-                        child: Text('Almuerzo'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Cena',
-                        child: Text('Cena'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Snack',
-                        child: Text('Snack'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Dia completo',
-                        child: Text('Dia completo'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _dayType = value ?? 'Dia estructurado';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+                    Text(meal['objective'].toString()),
+                    const SizedBox(height: 18),
+                  ],
+                  // Recommended meal card
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF5ECDD),
-                      borderRadius: BorderRadius.circular(18),
+                      color: const Color(0xFFF7F1E7),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      _mealLoggingHint(_dayType),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Slider(
-                    value: _adherenceScore,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: _adherenceScore.round().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        _adherenceScore = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _proteinController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Proteina (g)',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _hydrationController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Hidratacion (L)',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _notesController,
-                    decoration: const InputDecoration(
-                      labelText: 'Notas del registro',
-                    ),
-                    maxLines: 2,
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _isSubmitting ? null : _submitNutrition,
-                      child: Text(
-                        _isSubmitting
-                            ? 'Guardando...'
-                            : 'Guardar este registro',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            AppSurfaceCard(
-              backgroundColor: const Color(0xFFE8EFE8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Insight del dia',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(_advancedNutritionInsight(preferences.coachingStyle)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            const AppSectionTitle(title: 'Historial nutricional'),
-            const SizedBox(height: 12),
-            ...(logs.isEmpty
-                ? [
-                    const AppSurfaceCard(
-                      child: Text('Todavia no has registrado dias nutricionales.'),
-                    ),
-                  ]
-                : logs.take(4).map((entry) {
-                    final item = entry as Map<String, dynamic>;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: AppSurfaceCard(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item['meal_label']?.toString() ?? '',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${item['adherence_score']}% · ${item['protein_grams']} g proteina',
-                                  ),
-                                  if ((item['notes']?.toString() ?? '').isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      item['notes']?.toString() ?? '',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'edit') {
-                                  _editNutrition(item);
-                                } else if (value == 'delete') {
-                                  _deleteNutrition(item['id'] as int);
-                                }
-                              },
-                              itemBuilder: (context) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('Editar'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Eliminar'),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              (item['logged_at']?.toString() ?? '').split('T').first,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  })),
-            const SizedBox(height: 20),
-            const AppSectionTitle(title: 'Comidas sugeridas para hoy'),
-            const SizedBox(height: 4),
-            Text(
-              'Toca una comida para ver el detalle.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            ...meals.map((meal) {
-              final item = meal as Map<String, dynamic>;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () => _showMealDetail(item),
-                  borderRadius: BorderRadius.circular(28),
-                  child: AppSurfaceCard(
-                    child: Column(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item['title']?.toString() ?? '',
-                                style: Theme.of(context).textTheme.titleMedium,
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            color: _kBrandLight,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.image_outlined, color: _kBrand),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Comida recomendada',
+                                style: TextStyle(fontWeight: FontWeight.w700),
                               ),
-                            ),
-                            const Icon(Icons.open_in_full_rounded, size: 18),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _formatMealDescription(
-                            item['meal']?.toString() ?? '',
-                            preferences.coachingStyle,
+                              const SizedBox(height: 4),
+                              Text(
+                                meal['meal_name']?.toString() ??
+                                    meal['meal']?.toString() ?? '',
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 30),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  alignment: Alignment.centerLeft,
+                                ),
+                                onPressed: () => showNutritionDetailSheet(context, meal),
+                                child: const Text('Ver receta y detalle'),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          item['macros']?.toString() ?? '',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        if (item['objective'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            item['objective']?.toString() ?? '',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
                       ],
                     ),
                   ),
-                ),
-              );
-            }),
-            AppSurfaceCard(
-              backgroundColor: const Color(0xFFF5ECDD),
-              child: Text(data?['swap_tip']?.toString() ?? ''),
-            ),
-          ],
+                  const SizedBox(height: 18),
+                  Text(
+                    logEntry != null ? 'Registro realizado' : 'Registro del usuario',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: logEntry != null
+                          ? const Color(0xFFDFF0E6)
+                          : const Color(0xFFF5F0E6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: logEntry != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Adherencia ${logEntry['adherence_score'] ?? 0}%',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text('Proteína: ${logEntry['protein_grams'] ?? 0} g'),
+                              const SizedBox(height: 4),
+                              Text('Hidratación: ${logEntry['hydration_liters'] ?? 0} L'),
+                              if ((logEntry['notes']?.toString() ?? '').trim().isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(logEntry['notes'].toString()),
+                              ],
+                            ],
+                          )
+                        : Text(
+                            day['is_past'] == true
+                                ? 'Ese día no quedó una comida registrada para esta franja.'
+                                : 'Aún no hay registro para esta comida.',
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
-}
 
-class _NutritionViewData {
-  const _NutritionViewData({
-    required this.summary,
-    required this.history,
-    required this.preferences,
-  });
+  // ── Chip helper ──────────────────────────────────────────────────────────────
 
-  final Map<String, dynamic> summary;
-  final Map<String, dynamic> history;
-  final ProfilePreferences preferences;
-}
+  Widget _mealLabelChips({
+    required String current,
+    required ValueChanged<String> onChanged,
+  }) {
+    const labels = ['Desayuno', 'Almuerzo', 'Cena', 'Snack'];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: labels.map((label) {
+        final selected = current == label;
+        return ChoiceChip(
+          label: Text(label),
+          selected: selected,
+          onSelected: (_) => onChanged(label),
+        );
+      }).toList(),
+    );
+  }
 
-class _NutritionSheet extends StatelessWidget {
-  const _NutritionSheet({required this.child});
-
-  final Widget child;
+  // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      child: Material(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(28),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: child,
+    super.build(context);
+    return Stack(
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: (_isInitialLoading && _showShimmer)
+              ? _buildLoading()
+              : _isInitialLoading
+                  ? const SizedBox.shrink()
+                  : _viewData == null
+                      ? _buildError()
+                      : _buildContent(),
+        ),
+        // Full-screen photo analysis overlay
+        if (_isAnalyzingPhoto) _AnalyzingOverlay(spinController: _analyzeSpinController),
+      ],
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.black26),
+          const SizedBox(height: 12),
+          const Text('No se pudo cargar nutrición.'),
+          const SizedBox(height: 12),
+          FilledButton(onPressed: _bootstrap, child: const Text('Reintentar')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    final day = _selectedDay;
+    final meals = _mealsForSelectedDay;
+    final weeklyDays = (_viewData!.summary['weekly_days'] as List<dynamic>? ?? [])
+        .map((d) => Map<String, dynamic>.from(d as Map))
+        .toList();
+    final selectedIdx =
+        _selectedDayIndex ?? (_viewData!.summary['selected_day_index'] as int? ?? 0);
+
+    return RefreshIndicator(
+      onRefresh: _refreshSilently,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+        children: [
+          // ── Header ──
+          AppSectionTitle(
+            title: 'Nutrición',
+            subtitle: 'Seguimiento diario, análisis IA y plan semanal.',
+          ),
+          const SizedBox(height: 16),
+
+          // ── Photo AI CTA ──
+          _PhotoAnalysisCTA(
+            onTap: _isSubmitting ? null : _openPhotoAnalysisFlow,
+          ),
+          const SizedBox(height: 16),
+
+          // ── Today summary card ──
+          _TodaySummaryCard(summary: _viewData!.summary),
+          const SizedBox(height: 20),
+
+          // ── Weekly calendar ──
+          _SectionLabel(label: 'SEMANA'),
+          const SizedBox(height: 10),
+          _WeekCalendar(
+            days: weeklyDays,
+            selectedIndex: selectedIdx.clamp(0, math.max(0, weeklyDays.length - 1)),
+            logsForDay: _logsForDay,
+            mealsForDay: (day) =>
+                ((day['meals'] as List<dynamic>? ?? [])
+                    .map((m) => Map<String, dynamic>.from(m as Map))
+                    .toList()),
+            matchLog: _matchLogForMeal,
+            onDayTap: (index, item) {
+              setState(() => _selectedDayIndex = index);
+              _openDayDetail(item);
+            },
+          ),
+          const SizedBox(height: 20),
+
+          // ── Register card ──
+          _RegisterCard(
+            day: day,
+            mealLabel: _mealLabel,
+            isSubmitting: _isSubmitting,
+            swapTip: _viewData!.summary['swap_tip']?.toString() ?? '',
+            onMealLabelChanged: (v) => setState(() => _mealLabel = v),
+            onPhotoTap: _openPhotoAnalysisFlow,
+            onManualTap: _openManualRegistration,
+          ),
+          const SizedBox(height: 20),
+
+          // ── Meal timeline ──
+          _SectionLabel(
+            label: 'COMIDAS${day != null ? ' · ${day['day_label']}' : ''}',
+          ),
+          const SizedBox(height: 12),
+          if (meals.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Sin comidas para este día.',
+                style: TextStyle(color: Colors.black45),
+              ),
+            )
+          else
+            _MealTimeline(
+              meals: meals,
+              isoDate: day?['iso_date']?.toString() ?? '',
+              isPast: day?['is_past'] == true,
+              matchLog: _matchLogForMeal,
+              onMealTap: (meal) => showNutritionDetailSheet(context, meal),
+            ),
+          const SizedBox(height: 20),
+
+          // ── History ──
+          _SectionLabel(label: 'HISTORIAL RECIENTE'),
+          const SizedBox(height: 12),
+          _HistorySection(
+            history: _nutritionHistory.take(8).toList(),
+            onTap: _showHistoryDetail,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+      children: const [
+        ShimmerBox(width: double.infinity, height: 80, borderRadius: 16),
+        SizedBox(height: 12),
+        ShimmerBox(width: double.infinity, height: 160, borderRadius: 18),
+        SizedBox(height: 12),
+        ShimmerBox(width: double.infinity, height: 72, borderRadius: 12),
+        SizedBox(height: 12),
+        ShimmerBox(width: double.infinity, height: 120, borderRadius: 14),
+        SizedBox(height: 12),
+        ShimmerBox(width: double.infinity, height: 100, borderRadius: 12),
+        SizedBox(height: 12),
+        ShimmerBox(width: double.infinity, height: 100, borderRadius: 12),
+      ],
+    );
+  }
+}
+
+// ─── Photo Analysis CTA ────────────────────────────────────────────────────────
+
+class _PhotoAnalysisCTA extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _PhotoAnalysisCTA({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableCard(
+      borderRadius: 16,
+      color: _kBrand,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Analizar comida con IA',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Toma o sube una foto y obtén macros al instante',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white54, size: 16),
+          ],
         ),
       ),
     );
   }
 }
 
-String _formatHydration(int liters, String units) {
-  if (units == 'Imperiales') {
-    final ounces = liters * 33.8;
-    return '${ounces.round()} oz';
+// ─── Today Summary Card ────────────────────────────────────────────────────────
+
+class _TodaySummaryCard extends StatelessWidget {
+  final Map<String, dynamic> summary;
+  const _TodaySummaryCard({required this.summary});
+
+  static double _d(Map<String, dynamic> m, String key, double fallback) {
+    final v = m[key];
+    if (v == null) return fallback;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? fallback;
   }
-  return '$liters L';
+
+  @override
+  Widget build(BuildContext context) {
+    final calorieTarget = _d(summary, 'calorie_target', 2000);
+    final caloriesConsumed = _d(summary, 'calories_consumed_today', 0);
+    final proteinTarget = _d(summary, 'protein_target_g', 150);
+    final proteinConsumed = _d(summary, 'protein_consumed_g', 0);
+    final carbsTarget = _d(summary, 'carbs_target_g', 250);
+    final carbsConsumed = _d(summary, 'carbs_consumed_g', 0);
+    final fatTarget = _d(summary, 'fat_target_g', 65);
+    final fatConsumed = _d(summary, 'fat_consumed_g', 0);
+    final waterTarget = _d(summary, 'water_target_l', 2.5);
+    final waterConsumed = _d(summary, 'water_consumed_l', 0);
+    final macroFocus = (summary['macro_focus'] as List<dynamic>? ?? []).cast<String>();
+
+    final calProgress = calorieTarget > 0
+        ? (caloriesConsumed / calorieTarget).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A4A47), Color(0xFF0F2E2C)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title row
+          Row(
+            children: [
+              Text(
+                'Hoy',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const Spacer(),
+              if (macroFocus.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    macroFocus.first,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Calorie ring + macros
+          Row(
+            children: [
+              // Ring
+              SizedBox(
+                width: 80,
+                height: 80,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CustomPaint(
+                      painter: _RingPainter(
+                        progress: calProgress,
+                        trackColor: Colors.white12,
+                        progressColor: const Color(0xFF4CAF50),
+                        strokeWidth: 8,
+                      ),
+                    ),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${caloriesConsumed.round()}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Text(
+                            'kcal',
+                            style: TextStyle(color: Colors.white54, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // Macro bars
+              Expanded(
+                child: Column(
+                  children: [
+                    _MacroBar(
+                      label: 'Proteína',
+                      consumed: proteinConsumed,
+                      target: proteinTarget,
+                      color: const Color(0xFF4FC3F7),
+                    ),
+                    const SizedBox(height: 8),
+                    _MacroBar(
+                      label: 'Carbos',
+                      consumed: carbsConsumed,
+                      target: carbsTarget,
+                      color: const Color(0xFFAED581),
+                    ),
+                    const SizedBox(height: 8),
+                    _MacroBar(
+                      label: 'Grasas',
+                      consumed: fatConsumed,
+                      target: fatTarget,
+                      color: const Color(0xFFFFD54F),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Water bar
+          Row(
+            children: [
+              const Icon(Icons.water_drop_outlined, color: Colors.lightBlueAccent, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                'Agua  ${waterConsumed.toStringAsFixed(1)} / ${waterTarget.toStringAsFixed(1)} L',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: waterTarget > 0
+                  ? (waterConsumed / waterTarget).clamp(0.0, 1.0)
+                  : 0.0,
+              minHeight: 6,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.lightBlueAccent),
+            ),
+          ),
+
+          // Calorie goal label
+          const SizedBox(height: 10),
+          Text(
+            'Objetivo: ${calorieTarget.round()} kcal · ${(calorieTarget - caloriesConsumed).clamp(0, calorieTarget).round()} restantes',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-String _nutritionCoachPrompt(String style) {
-  return switch (style) {
-    'Exigente' => 'Hoy buscamos estructura limpia, proteina alta y cero improvisacion innecesaria.',
-    'Flexible' => 'Prioriza adherencia y equivalencias faciles si tu dia se mueve.',
-    _ => 'Mantente en una estructura simple que puedas repetir sin friccion.',
-  };
+// ─── Weekly Calendar ───────────────────────────────────────────────────────────
+
+class _WeekCalendar extends StatelessWidget {
+  final List<Map<String, dynamic>> days;
+  final int selectedIndex;
+  final List<Map<String, dynamic>> Function(String) logsForDay;
+  final List<Map<String, dynamic>> Function(Map<String, dynamic>) mealsForDay;
+  final Map<String, dynamic>? Function(String, Map<String, dynamic>) matchLog;
+  final void Function(int, Map<String, dynamic>) onDayTap;
+
+  const _WeekCalendar({
+    required this.days,
+    required this.selectedIndex,
+    required this.logsForDay,
+    required this.mealsForDay,
+    required this.matchLog,
+    required this.onDayTap,
+  });
+
+  String _logStatus(Map<String, dynamic> day) {
+    final isoDate = day['iso_date']?.toString() ?? '';
+    final meals = mealsForDay(day);
+    if (meals.isEmpty) return 'none';
+    final logCount = meals.where((m) => matchLog(isoDate, m) != null).length;
+    if (logCount == 0) return 'none';
+    if (logCount >= meals.length) return 'full';
+    return 'partial';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 80,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: days.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = days[index];
+          final selected = selectedIndex == index;
+          final status = _logStatus(item);
+          final dotColor = status == 'full'
+              ? _kGreen
+              : status == 'partial'
+                  ? _kAmber
+                  : Colors.black12;
+
+          return GestureDetector(
+            onTap: () => onDayTap(index, item),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 60,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              decoration: BoxDecoration(
+                color: selected ? _kBrand : Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? _kBrand : _kGrey,
+                  width: selected ? 0 : 1,
+                ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: _kBrand.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    (item['day_label']?.toString() ?? '-').substring(0, 3).toUpperCase(),
+                    style: TextStyle(
+                      color: selected ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item['date']?.toString() ?? '',
+                    style: TextStyle(
+                      color: selected ? Colors.white70 : Colors.black45,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: selected ? Colors.white54 : dotColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
-String _advancedNutritionInsight(String style) {
-  return switch (style) {
-    'Exigente' => 'Haz que la primera comida marque el tono del dia: proteina clara, hidratacion y decision rapida.',
-    'Flexible' => 'El objetivo no es perfeccion: usa reemplazos simples y conserva la proteina base.',
-    _ => 'Mantener regularidad en proteina e hidratacion hoy vale mas que una comida perfecta.',
-  };
+// ─── Register Card ─────────────────────────────────────────────────────────────
+
+class _RegisterCard extends StatelessWidget {
+  final Map<String, dynamic>? day;
+  final String mealLabel;
+  final bool isSubmitting;
+  final String swapTip;
+  final ValueChanged<String> onMealLabelChanged;
+  final VoidCallback onPhotoTap;
+  final VoidCallback onManualTap;
+
+  const _RegisterCard({
+    required this.day,
+    required this.mealLabel,
+    required this.isSubmitting,
+    required this.swapTip,
+    required this.onMealLabelChanged,
+    required this.onPhotoTap,
+    required this.onManualTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Desayuno', 'Almuerzo', 'Cena', 'Snack'];
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: const Color(0xFFF7F1E7),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Registrar ${day?['day_label'] ?? 'comida'}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: labels.map((label) {
+                final selected = mealLabel == label;
+                return ChoiceChip(
+                  label: Text(label),
+                  selected: selected,
+                  onSelected: (_) => onMealLabelChanged(label),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: isSubmitting ? null : onPhotoTap,
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: const Text('Analizar foto'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: isSubmitting ? null : onManualTap,
+                    icon: const Icon(Icons.edit_note_rounded),
+                    label: const Text('Manual'),
+                  ),
+                ),
+              ],
+            ),
+            if (swapTip.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                swapTip,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.black54),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-String _formatMealDescription(String meal, String style) {
-  return switch (style) {
-    'Exigente' => '$meal Mantiene la estructura y evita picoteos reactivos.',
-    'Flexible' => '$meal Si no llegas, usa una version equivalente y sigue.',
-    _ => '$meal Busca facilidad, saciedad y continuidad.',
-  };
+// ─── Meal Timeline ─────────────────────────────────────────────────────────────
+
+class _MealTimeline extends StatelessWidget {
+  final List<Map<String, dynamic>> meals;
+  final String isoDate;
+  final bool isPast;
+  final Map<String, dynamic>? Function(String, Map<String, dynamic>) matchLog;
+  final void Function(Map<String, dynamic>) onMealTap;
+
+  const _MealTimeline({
+    required this.meals,
+    required this.isoDate,
+    required this.isPast,
+    required this.matchLog,
+    required this.onMealTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: meals.asMap().entries.map((entry) {
+        final i = entry.key;
+        final meal = entry.value;
+        final log = matchLog(isoDate, meal);
+        final isLast = i == meals.length - 1;
+        return _MealTimelineCard(
+          meal: meal,
+          log: log,
+          isPast: isPast,
+          isLast: isLast,
+          onTap: () => onMealTap(meal),
+        );
+      }).toList(),
+    );
+  }
 }
 
-String _mealLoggingHint(String mealLabel) {
-  return switch (mealLabel) {
-    'Desayuno' => 'Usa este registro para dejar claro como arrancaste el dia: proteina, hidratacion y sensacion general.',
-    'Almuerzo' => 'Registra si esta comida sostuvo bien tu energia y si cumpliste la base de proteina.',
-    'Cena' => 'Usa este registro para cerrar el dia sin improvisar demasiado y dejar trazabilidad.',
-    'Snack' => 'Ideal para colaciones, puentes de proteina o ajustes cuando el dia se movio.',
-    _ => 'Este registro resume tu adherencia global del dia, proteina total e hidratacion.',
-  };
+class _MealTimelineCard extends StatelessWidget {
+  final Map<String, dynamic> meal;
+  final Map<String, dynamic>? log;
+  final bool isPast;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  const _MealTimelineCard({
+    required this.meal,
+    required this.log,
+    required this.isPast,
+    this.isLast = true,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = meal['title']?.toString() ?? 'Comida';
+    final mealName = meal['meal_name']?.toString() ?? meal['meal']?.toString() ?? '';
+    final kcal = meal['calories_kcal'];
+    final protein = meal['protein_g'];
+    final time = meal['scheduled_time']?.toString();
+    final logged = log != null;
+    final mealBg = _mealColor(title);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Timeline column
+          SizedBox(
+            width: 32,
+            child: Column(
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: logged ? _kGreen : Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: logged ? _kGreen : _kGrey,
+                      width: 2,
+                    ),
+                  ),
+                  child: logged
+                      ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                      : null,
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: _kGrey,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Card
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+              child: GestureDetector(
+                onTap: onTap,
+                child: Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: logged ? const Color(0xFF9DC7AD) : _kGrey,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: mealBg,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(_mealIcon(title), color: _kBrand, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  if (time != null) ...[
+                                    const Spacer(),
+                                    Text(
+                                      time,
+                                      style: const TextStyle(
+                                        color: Colors.black45,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              if (mealName.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  mealName,
+                                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  _SmallPill(
+                                    label: logged
+                                        ? 'Registrada'
+                                        : isPast
+                                            ? 'No registrada'
+                                            : 'Planificada',
+                                    color: logged
+                                        ? _kGreenLight
+                                        : isPast
+                                            ? const Color(0xFFFFE8E8)
+                                            : _kAmberLight,
+                                  ),
+                                  if (kcal != null && kcal.toString().isNotEmpty)
+                                    _SmallPill(label: '$kcal kcal'),
+                                  if (protein != null && protein.toString().isNotEmpty)
+                                    _SmallPill(label: 'P ${protein}g'),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: Colors.black26, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-String _mealIntent(String mealLabel) {
-  return switch (mealLabel) {
-    'Desayuno' => 'Objetivo: abrir el dia con una comida facil, saciante y con proteina clara.',
-    'Almuerzo' => 'Objetivo: sostener energia y evitar decisiones reactivas a media tarde.',
-    'Cena' => 'Objetivo: cerrar el dia con calma, saciedad y una digestion simple.',
-    _ => 'Objetivo: resolver una comida util sin romper la estructura general.',
-  };
+// ─── History Section ───────────────────────────────────────────────────────────
+
+class _HistorySection extends StatelessWidget {
+  final List<Map<String, dynamic>> history;
+  final void Function(Map<String, dynamic>) onTap;
+
+  const _HistorySection({required this.history, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    if (history.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text('Sin registros recientes.', style: TextStyle(color: Colors.black45)),
+      );
+    }
+
+    // Group by date
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final entry in history) {
+      final date = (entry['logged_at']?.toString() ?? '').split('T').first;
+      grouped.putIfAbsent(date, () => []).add(entry);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: grouped.entries.map((group) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Date separator
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                group.key,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Colors.black45,
+                      letterSpacing: 0.6,
+                    ),
+              ),
+            ),
+            ...group.value.map((entry) => _HistoryEntryCard(
+                  entry: entry,
+                  onTap: () => onTap(entry),
+                )),
+            const SizedBox(height: 12),
+          ],
+        );
+      }).toList(),
+    );
+  }
 }
 
-String _mealSwap(String mealLabel) {
-  return switch (mealLabel) {
-    'Desayuno' => 'Si no puedes cocinar, usa yogurt griego + fruta + avena o un batido con proteina.',
-    'Almuerzo' => 'Si comes fuera, prioriza proteina magra + carbohidrato simple + vegetales.',
-    'Cena' => 'Si llegas tarde, usa una cena corta: wrap, huevos o atun con un carbohidrato facil.',
-    _ => 'Si la opcion ideal no existe, busca equivalencia en proteina y saciedad.',
-  };
+class _HistoryEntryCard extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  final VoidCallback onTap;
+
+  const _HistoryEntryCard({required this.entry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = entry['meal_label']?.toString() ?? 'Registro';
+    final adherence = entry['adherence_score'] as int? ?? 0;
+    final protein = entry['protein_grams'];
+    final hydration = entry['hydration_liters'];
+    final time = (entry['logged_at']?.toString() ?? '').split('T').last.substring(0, 5);
+    final mealBg = _mealColor(label);
+    final adherenceColor = adherence >= 80
+        ? _kGreen
+        : adherence >= 50
+            ? _kAmber
+            : Colors.red.shade400;
+
+    return Dismissible(
+      key: ValueKey(entry['id'] ?? entry['logged_at']),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Eliminar registro'),
+          content: const Text('¿Seguro que quieres eliminar este registro?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        ),
+      ),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: Colors.red.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(Icons.delete_outline_rounded, color: Colors.red.shade700),
+      ),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Card(
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: _kGrey),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: mealBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(_mealIcon(label), color: _kBrand, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            time,
+                            style: const TextStyle(color: Colors.black38, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _SmallPill(
+                            label: '$adherence%',
+                            color: adherence >= 80
+                                ? _kGreenLight
+                                : adherence >= 50
+                                    ? _kAmberLight
+                                    : const Color(0xFFFFE8E8),
+                            textColor: adherenceColor,
+                          ),
+                          if (protein != null) _SmallPill(label: 'P ${protein}g'),
+                          if (hydration != null) _SmallPill(label: '${hydration}L'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Analyzing Overlay ─────────────────────────────────────────────────────────
+
+class _AnalyzingOverlay extends StatelessWidget {
+  final AnimationController spinController;
+  const _AnalyzingOverlay({required this.spinController});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black54,
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.all(40),
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RotationTransition(
+                turns: spinController,
+                child: const Icon(Icons.camera_enhance_rounded, size: 56, color: _kBrand),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Analizando tu comida...',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'La IA está identificando macros e ingredientes',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.black45),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Source Option Button ──────────────────────────────────────────────────────
+
+class _SourceOptionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _SourceOptionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: _kBrandLight,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 32, color: _kBrand),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: _kBrand),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Macro Row ─────────────────────────────────────────────────────────────────
+
+class _MacroRow extends StatelessWidget {
+  final dynamic kcal;
+  final dynamic protein;
+  final dynamic carbs;
+  final dynamic fat;
+
+  const _MacroRow({this.kcal, this.protein, this.carbs, this.fat});
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <_MacroChipData>[];
+    if (kcal != null && kcal.toString().isNotEmpty) {
+      chips.add(_MacroChipData(emoji: '🔥', value: '$kcal', unit: 'kcal', color: const Color(0xFFFFEDCC)));
+    }
+    if (protein != null && protein.toString().isNotEmpty) {
+      chips.add(_MacroChipData(emoji: '🥩', value: '$protein', unit: 'g prot', color: const Color(0xFFDCEEDC)));
+    }
+    if (carbs != null && carbs.toString().isNotEmpty) {
+      chips.add(_MacroChipData(emoji: '🌾', value: '$carbs', unit: 'g carb', color: const Color(0xFFE8E4F4)));
+    }
+    if (fat != null && fat.toString().isNotEmpty) {
+      chips.add(_MacroChipData(emoji: '🫙', value: '$fat', unit: 'g gras', color: const Color(0xFFFFF3E0)));
+    }
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: chips.map((c) => _MacroChipWidget(data: c)).toList(),
+    );
+  }
+}
+
+class _MacroChipData {
+  final String emoji;
+  final String value;
+  final String unit;
+  final Color color;
+  const _MacroChipData({
+    required this.emoji,
+    required this.value,
+    required this.unit,
+    required this.color,
+  });
+}
+
+class _MacroChipWidget extends StatelessWidget {
+  final _MacroChipData data;
+  const _MacroChipWidget({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: data.color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(data.emoji, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 4),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data.value,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+              Text(
+                data.unit,
+                style: const TextStyle(fontSize: 10, color: Colors.black54),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Macro Bar (today card) ────────────────────────────────────────────────────
+
+class _MacroBar extends StatelessWidget {
+  final String label;
+  final double consumed;
+  final double target;
+  final Color color;
+
+  const _MacroBar({
+    required this.label,
+    required this.consumed,
+    required this.target,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = target > 0 ? (consumed / target).clamp(0.0, 1.0) : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const Spacer(),
+            Text(
+              '${consumed.round()} / ${target.round()}g',
+              style: const TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 5,
+            backgroundColor: Colors.white12,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Ring Painter ──────────────────────────────────────────────────────────────
+
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final Color trackColor;
+  final Color progressColor;
+  final double strokeWidth;
+
+  const _RingPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.progressColor,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.shortestSide - strokeWidth) / 2;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    // Track
+    paint.color = trackColor;
+    canvas.drawCircle(center, radius, paint);
+
+    // Progress arc
+    paint.color = progressColor;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      2 * math.pi * progress,
+      false,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) => old.progress != progress;
+}
+
+// ─── Small Pill ────────────────────────────────────────────────────────────────
+
+class _SmallPill extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final Color? textColor;
+
+  const _SmallPill({required this.label, this.color, this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: textColor ?? Colors.black54,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Section Label ─────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Colors.black45,
+            letterSpacing: 0.9,
+            fontWeight: FontWeight.w600,
+          ),
+    );
+  }
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+String _normalizeMealLabel(String value) => value.trim().toLowerCase();
+
+// ─── View data model ───────────────────────────────────────────────────────────
+
+class _NutritionViewData {
+  const _NutritionViewData({
+    required this.summary,
+    required this.history,
+    required this.coachingStyle,
+  });
+
+  final Map<String, dynamic> summary;
+  final Map<String, dynamic> history;
+  final String coachingStyle;
+
+  _NutritionViewData copyWith({
+    Map<String, dynamic>? summary,
+    Map<String, dynamic>? history,
+    String? coachingStyle,
+  }) {
+    return _NutritionViewData(
+      summary: summary ?? this.summary,
+      history: history ?? this.history,
+      coachingStyle: coachingStyle ?? this.coachingStyle,
+    );
+  }
 }
