@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'route_args.dart';
 import '../../features/auth/presentation/pages/auth_page.dart';
 import '../../features/dashboard/presentation/pages/home_shell.dart';
 import '../../features/history/presentation/pages/history_page.dart';
@@ -135,26 +136,126 @@ class AppRouter {
       case controlCenter:
         return const ControlCenterPage();
       case workoutMode:
-        final args =
-            settings?.arguments as Map<String, dynamic>? ?? const {};
+        final rawArgs = settings?.arguments;
+        if (rawArgs is WorkoutModeArgs) {
+          // New typed path: WorkoutModeArgs carries workoutDay + planId.
+          // WorkoutModeScreen still accepts the flat fields — extract them.
+          final day = rawArgs.workoutDay;
+          return WorkoutModeScreen(
+            exerciseName: day['exerciseName'] as String? ?? '',
+            dayIsoDate: day['dayIsoDate'] as String? ??
+                DateTime.now().toIso8601String().substring(0, 10),
+            blockTitle: day['blockTitle'] as String?,
+          );
+        } else if (rawArgs is Map<String, dynamic>) {
+          // Legacy map path — still supported.
+          return WorkoutModeScreen(
+            exerciseName: rawArgs['exerciseName'] as String? ?? '',
+            dayIsoDate: rawArgs['dayIsoDate'] as String? ??
+                DateTime.now().toIso8601String().substring(0, 10),
+            blockTitle: rawArgs['blockTitle'] as String?,
+          );
+        } else if (rawArgs != null) {
+          return _RouteErrorPage(
+            routeName: workoutMode,
+            expected: 'WorkoutModeArgs or Map<String, dynamic>',
+            received: rawArgs.runtimeType.toString(),
+          );
+        }
         return WorkoutModeScreen(
-          exerciseName: args['exerciseName'] as String? ?? '',
-          dayIsoDate: args['dayIsoDate'] as String? ??
-              DateTime.now().toIso8601String().substring(0, 10),
-          blockTitle: args['blockTitle'] as String?,
+          exerciseName: '',
+          dayIsoDate: DateTime.now().toIso8601String().substring(0, 10),
         );
       case progress:
         return const ProgressPage();
       case shoppingList:
-        final meals =
-            settings?.arguments as List<dynamic>? ?? const <dynamic>[];
-        return ShoppingListPage(weeklyMeals: meals);
+        final rawShoppingArgs = settings?.arguments;
+        if (rawShoppingArgs is ShoppingListArgs) {
+          return ShoppingListPage(weeklyMeals: rawShoppingArgs.meals);
+        } else if (rawShoppingArgs is List) {
+          // Legacy list path — still supported.
+          return ShoppingListPage(weeklyMeals: rawShoppingArgs);
+        } else if (rawShoppingArgs != null) {
+          return _RouteErrorPage(
+            routeName: shoppingList,
+            expected: 'ShoppingListArgs or List',
+            received: rawShoppingArgs.runtimeType.toString(),
+          );
+        }
+        return ShoppingListPage(weeklyMeals: const []);
       case workoutSession:
-        final day = settings?.arguments as Map<String, dynamic>? ?? const {};
-        return WorkoutSessionScreen(workoutDay: day);
+        final rawSessionArgs = settings?.arguments;
+        if (rawSessionArgs is WorkoutSessionArgs) {
+          return WorkoutSessionScreen(workoutDay: rawSessionArgs.workoutDay);
+        } else if (rawSessionArgs is Map<String, dynamic>) {
+          // Legacy map path — still supported.
+          return WorkoutSessionScreen(workoutDay: rawSessionArgs);
+        } else if (rawSessionArgs != null) {
+          return _RouteErrorPage(
+            routeName: workoutSession,
+            expected: 'WorkoutSessionArgs or Map<String, dynamic>',
+            received: rawSessionArgs.runtimeType.toString(),
+          );
+        }
+        return WorkoutSessionScreen(workoutDay: const {});
       case dashboard:
       default:
         return const HomeShellPage();
     }
+  }
+}
+
+/// Shown when a route receives arguments of an unexpected type.
+class _RouteErrorPage extends StatelessWidget {
+  const _RouteErrorPage({
+    required this.routeName,
+    required this.expected,
+    required this.received,
+  });
+
+  final String routeName;
+  final String expected;
+  final String received;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Error de navegación')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline_rounded, size: 64, color: AppColors.error),
+            const SizedBox(height: 16),
+            Text(
+              'Argumento inesperado para "$routeName"',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Se esperaba: $expected\nSe recibió: $received',
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  AppRouter.dashboard,
+                  (route) => false,
+                );
+              },
+              child: const Text('Volver al inicio'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

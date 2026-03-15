@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../auth/data/services/auth_session_controller.dart';
@@ -7,7 +9,9 @@ import '../../../progress/presentation/pages/progress_page.dart';
 import '../../../subscription/presentation/pages/subscription_page.dart';
 import '../../../workout/presentation/pages/workout_page.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/session_data_cache.dart';
+import '../../../../shared/widgets/offline_banner.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../plans/data/services/plan_api_service.dart';
 import '../../../nutrition/data/services/nutrition_api_service.dart';
@@ -27,6 +31,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
   bool _loadingProfile = true;
   late final PageController _pageController;
   bool _showPageSplash = false;
+  bool _isOnline = true;
+  StreamSubscription<bool>? _connectivitySub;
   static const _titles = [
     'Inicio',
     'Workout',
@@ -80,10 +86,22 @@ class _HomeShellPageState extends State<HomeShellPage> {
     _pageController = PageController();
     _loadProfileStatus();
     _warmUpPrimaryData();
+    _initConnectivity();
+  }
+
+  void _initConnectivity() {
+    final service = ConnectivityService.instance;
+    _isOnline = service.currentlyOnline;
+    service.startPolling();
+    _connectivitySub = service.isOnline.listen((online) {
+      if (!mounted) return;
+      setState(() => _isOnline = online);
+    });
   }
 
   @override
   void dispose() {
+    _connectivitySub?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -180,7 +198,11 @@ class _HomeShellPageState extends State<HomeShellPage> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Container(
+      body: Column(
+        children: [
+          OfflineBanner(isOffline: !_isOnline),
+          Expanded(
+            child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [Color(0xFFF5EFE4), Color(0xFFEAEFEC)],
@@ -230,6 +252,9 @@ class _HomeShellPageState extends State<HomeShellPage> {
             ),
           ],
         ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton:
           _selectedIndex == 0 && !_loadingProfile && !_hasProfile

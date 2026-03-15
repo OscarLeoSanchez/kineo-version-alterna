@@ -26,10 +26,14 @@ class _ProgressPageState extends State<ProgressPage> {
   final TextEditingController _chestController = TextEditingController();
   final TextEditingController _armController = TextEditingController();
   final TextEditingController _thighController = TextEditingController();
+  final TextEditingController _muscleMassController = TextEditingController();
   final TextEditingController _sleepController = TextEditingController();
+  final TextEditingController _energyController = TextEditingController();
+  final TextEditingController _moodController = TextEditingController();
   final TextEditingController _stepsController = TextEditingController();
   final TextEditingController _restingHeartRateController =
       TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
   bool _isSubmitting = false;
   String _selectedPreset = 'Peso';
 
@@ -59,9 +63,13 @@ class _ProgressPageState extends State<ProgressPage> {
     _chestController.dispose();
     _armController.dispose();
     _thighController.dispose();
+    _muscleMassController.dispose();
     _sleepController.dispose();
+    _energyController.dispose();
+    _moodController.dispose();
     _stepsController.dispose();
     _restingHeartRateController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -73,13 +81,31 @@ class _ProgressPageState extends State<ProgressPage> {
     final chest = double.tryParse(_chestController.text.replaceAll(',', '.'));
     final arm = double.tryParse(_armController.text.replaceAll(',', '.'));
     final thigh = double.tryParse(_thighController.text.replaceAll(',', '.'));
+    final muscleMass = double.tryParse(_muscleMassController.text.replaceAll(',', '.'));
     final sleep = double.tryParse(_sleepController.text.replaceAll(',', '.'));
+    final energyRaw = _energyController.text.trim();
+    final energy = int.tryParse(energyRaw);
+    final moodRaw = _moodController.text.trim();
+    final mood = int.tryParse(moodRaw);
     final steps = int.tryParse(_stepsController.text);
     final restingHeartRate = int.tryParse(_restingHeartRateController.text);
+    final notes = _notesController.text.trim();
 
     if (weight == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa un peso valido.')),
+      );
+      return;
+    }
+    if (energyRaw.isNotEmpty && (energy == null || energy < 1 || energy > 10)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El nivel de energía debe ser un número entre 1 y 10.')),
+      );
+      return;
+    }
+    if (moodRaw.isNotEmpty && (mood == null || mood < 1 || mood > 10)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El estado de ánimo debe ser un número entre 1 y 10.')),
       );
       return;
     }
@@ -92,14 +118,18 @@ class _ProgressPageState extends State<ProgressPage> {
       await const BodyMetricApiService().submitMetric(
         weightKg: weight,
         waistCm: waist,
-        bodyFatPercentage: bodyFat,
-        hipCm: hip,
+        bodyFatPct: bodyFat,
+        hipsCm: hip,
         chestCm: chest,
         armCm: arm,
         thighCm: thigh,
+        muscleMassKg: muscleMass,
         sleepHours: sleep,
+        energyLevel: energy,
+        moodScore: mood,
         steps: steps,
         restingHeartRate: restingHeartRate,
+        notes: notes.isNotEmpty ? notes : null,
       );
       _weightController.clear();
       _waistController.clear();
@@ -108,15 +138,29 @@ class _ProgressPageState extends State<ProgressPage> {
       _chestController.clear();
       _armController.clear();
       _thighController.clear();
+      _muscleMassController.clear();
       _sleepController.clear();
+      _energyController.clear();
+      _moodController.clear();
       _stepsController.clear();
       _restingHeartRateController.clear();
+      _notesController.clear();
       setState(() {
         _future = _loadProgress();
       });
       if (!mounted) return;
+      // Build a summary of what was submitted
+      final parts = <String>['peso ${weight}kg'];
+      if (waist != null) parts.add('cintura ${waist}cm');
+      if (hip != null) parts.add('cadera ${hip}cm');
+      if (chest != null) parts.add('pecho ${chest}cm');
+      if (bodyFat != null) parts.add('grasa ${bodyFat}%');
+      if (muscleMass != null) parts.add('musculo ${muscleMass}kg');
+      if (sleep != null) parts.add('sueño ${sleep}h');
+      if (energy != null) parts.add('energia $energy/10');
+      if (mood != null) parts.add('animo $mood/10');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Metrica registrada correctamente.')),
+        SnackBar(content: Text('Registrado: ${parts.join(', ')}')),
       );
     } catch (_) {
       if (!mounted) return;
