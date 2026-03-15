@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../domain/models/auth_session.dart';
@@ -34,7 +35,8 @@ class AuthSessionController extends ChangeNotifier {
       final refreshedSession = await _apiService.me(storedSession.accessToken);
       _session = refreshedSession;
       await _store.save(refreshedSession);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Token refresh failed: $e');
       await _store.clear();
       _session = null;
     }

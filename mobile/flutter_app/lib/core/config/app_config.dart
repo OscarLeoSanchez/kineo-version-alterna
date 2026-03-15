@@ -20,6 +20,7 @@ class AppConfig {
       return 'http://192.168.128.11:8010';
     }
 
-    return 'http://localhost:8000';
+    // Web (Chrome) and other platforms use the production server.
+    return 'http://5.78.42.147:8000';
   }
 }

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/config/app_config.dart';
 import '../../data/services/auth_api_service.dart';
 import '../../data/services/auth_session_controller.dart';
-import '../../data/services/auth_session_store.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -41,7 +40,6 @@ class _AuthPageState extends State<AuthPage> {
     try {
       const api = AuthApiService();
       final authController = AuthSessionScope.of(context);
-      final store = AuthSessionStore();
 
       final session = _isRegisterMode
           ? await api.register(
@@ -55,11 +53,12 @@ class _AuthPageState extends State<AuthPage> {
             );
 
       await authController.setSession(session);
-      await store.save(session);
       if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil('/', (route) => false);
+      if (_isRegisterMode) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/onboarding', (route) => false);
+      } else {
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -260,8 +259,8 @@ class _AuthPageState extends State<AuthPage> {
         if (label == 'Email' && !value.contains('@')) {
           return 'Ingresa un correo valido';
         }
-        if (label == 'Contrasena' && value.length < 4) {
-          return 'Usa al menos 4 caracteres';
+        if (label == 'Contrasena' && value.length < 8) {
+          return 'Usa al menos 8 caracteres';
         }
         if (label == 'Nombre completo' && value.trim().length < 2) {
           return 'Ingresa al menos 2 caracteres';
