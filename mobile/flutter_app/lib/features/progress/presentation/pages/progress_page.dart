@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_surface_card.dart';
@@ -284,7 +285,7 @@ class _ProgressPageState extends State<ProgressPage> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(labelText: 'Sueno (h)'),
+                        decoration: const InputDecoration(labelText: 'Sueño (h)'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -363,6 +364,26 @@ class _ProgressPageState extends State<ProgressPage> {
   }
 
   Future<void> _deleteMetric(int id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('¿Eliminar este registro?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
     await const ActivityHistoryApiService().deleteBodyMetric(id);
     if (!mounted) return;
     setState(() {
@@ -477,7 +498,7 @@ class _ProgressPageState extends State<ProgressPage> {
                   child: TextField(
                     controller: _sleepController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Sueno (h)'),
+                    decoration: const InputDecoration(labelText: 'Sueño (h)'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -557,7 +578,10 @@ class _ProgressPageState extends State<ProgressPage> {
             ? bodyMetrics[1] as Map<String, dynamic>
             : null;
 
-        return ListView(
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
           children: [
             const AppSectionTitle(
@@ -831,6 +855,8 @@ class _ProgressPageState extends State<ProgressPage> {
               );
             }),
           ],
+            ),
+          ),
         );
       },
     );

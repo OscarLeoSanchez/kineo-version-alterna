@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/theme/app_colors.dart';
+
 // ─── Shopping List Page — T-20 ────────────────────────────────────────────────
 //
 // Receives weekly meals from the nutrition plan, consolidates all
@@ -233,7 +235,12 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
           ],
         ],
       ),
-      body: hasItems ? _buildList() : _buildEmpty(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: hasItems ? _buildList() : _buildEmpty(),
+        ),
+      ),
     );
   }
 
@@ -247,13 +254,13 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
             Icon(
               Icons.shopping_cart_outlined,
               size: 64,
-              color: Colors.black26,
+              color: AppColors.textDisabled,
             ),
             SizedBox(height: 16),
             Text(
               'No hay ingredientes disponibles en tu plan semanal.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
+              style: TextStyle(color: AppColors.textSecondary),
             ),
           ],
         ),
@@ -427,7 +434,7 @@ class _IngredientTile extends StatelessWidget {
                   decoration: item.checked
                       ? TextDecoration.lineThrough
                       : TextDecoration.none,
-                  color: item.checked ? Colors.black38 : Colors.black87,
+                  color: item.checked ? AppColors.textDisabled : AppColors.textPrimary,
                 ),
               ),
             ),

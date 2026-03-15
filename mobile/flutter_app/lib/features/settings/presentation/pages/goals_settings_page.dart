@@ -50,14 +50,48 @@ class _GoalsSettingsPageState extends State<GoalsSettingsPage> {
     super.dispose();
   }
 
+  Future<void> _pickTime() async {
+    final parts = _timeController.text.split(':');
+    final initialHour = int.tryParse(parts.isNotEmpty ? parts[0] : '7') ?? 7;
+    final initialMinute = int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0;
+    final tod = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: initialHour, minute: initialMinute),
+    );
+    if (tod != null) {
+      setState(() {
+        _timeController.text =
+            '${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}';
+      });
+    }
+  }
+
   Future<void> _save() async {
+    final weeklySessions = int.tryParse(_workoutController.text) ?? 0;
+    final adherenceTarget = int.tryParse(_nutritionController.text) ?? 0;
+    if (weeklySessions < 1 || weeklySessions > 7) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sesiones objetivo debe estar entre 1 y 7.'),
+        ),
+      );
+      return;
+    }
+    if (adherenceTarget < 10 || adherenceTarget > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Adherencia objetivo debe estar entre 10 y 100.'),
+        ),
+      );
+      return;
+    }
     setState(() {
       _saving = true;
     });
     try {
       await const GoalsApiService().updateGoal(
-        workoutSessionsTarget: int.tryParse(_workoutController.text) ?? 4,
-        nutritionAdherenceTarget: int.tryParse(_nutritionController.text) ?? 85,
+        workoutSessionsTarget: weeklySessions,
+        nutritionAdherenceTarget: adherenceTarget,
         weightCheckinsTarget: int.tryParse(_weightController.text) ?? 2,
         remindersEnabled: _remindersEnabled,
         reminderTime: _timeController.text,
@@ -143,8 +177,11 @@ class _GoalsSettingsPageState extends State<GoalsSettingsPage> {
                       ),
                       TextField(
                         controller: _timeController,
+                        readOnly: true,
+                        onTap: _pickTime,
                         decoration: const InputDecoration(
-                          labelText: 'Hora recordatorio (HH:MM)',
+                          labelText: 'Hora recordatorio',
+                          suffixIcon: Icon(Icons.access_time_rounded),
                         ),
                       ),
                       const SizedBox(height: 16),

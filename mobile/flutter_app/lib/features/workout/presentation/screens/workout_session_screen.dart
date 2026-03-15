@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../data/services/workout_block_api_service.dart';
 import '../../data/services/workout_log_api_service.dart';
 import '../widgets/workout_log_confirmation_sheet.dart';
@@ -295,14 +296,6 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
           workoutDay: widget.workoutDay,
           completedBlocks: _completedBlocks.length,
           totalBlocks: _blocks.length,
-        ),
-      );
-      if (!mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => WorkoutLogConfirmationSheet(
           focus: widget.workoutDay['focus']?.toString() ?? 'Sesión guiada',
           energyLevel: widget.workoutDay['intensity']?.toString() ?? 'Media',
         ),
@@ -366,7 +359,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F0E6),
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
@@ -399,7 +392,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
                               child: Icon(
                                 Icons.circle,
                                 size: 8,
-                                color: Color(0xFF143C3A),
+                                color: AppColors.primary,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -418,7 +411,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF143C3A),
+                  color: AppColors.primary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -531,7 +524,7 @@ class AppBarTimerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD8D1C4)),
+        border: Border.all(color: AppColors.neutral),
       ),
       child: Column(
         children: [
@@ -546,10 +539,10 @@ class AppBarTimerCard extends StatelessWidget {
                   child: CircularProgressIndicator(
                     value: progress.clamp(0.0, 1.0),
                     strokeWidth: 8,
-                    backgroundColor: const Color(0xFFE5E7EB),
+                    backgroundColor: AppColors.divider,
                     color: isRunning
-                        ? const Color(0xFF143C3A)
-                        : const Color(0xFF9CA3AF),
+                        ? AppColors.primary
+                        : AppColors.textDisabled,
                   ),
                 ),
                 Text(
@@ -557,7 +550,7 @@ class AppBarTimerCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1C1C1E),
+                    color: AppColors.textPrimary,
                     letterSpacing: 1,
                   ),
                 ),
@@ -579,8 +572,8 @@ class AppBarTimerCard extends StatelessWidget {
                   label: Text(isRunning ? 'Pausar' : 'Iniciar'),
                   style: FilledButton.styleFrom(
                     backgroundColor: isRunning
-                        ? const Color(0xFF2E7D52) // green when running
-                        : const Color(0xFF6B7280), // grey when paused/stopped
+                        ? AppColors.accent // green when running
+                        : AppColors.textMuted, // grey when paused/stopped
                   ),
                 ),
               ),
@@ -599,11 +592,15 @@ class _GuidedSessionSummarySheet extends StatelessWidget {
     required this.workoutDay,
     required this.completedBlocks,
     required this.totalBlocks,
+    required this.focus,
+    required this.energyLevel,
   });
 
   final Map<String, dynamic> workoutDay;
   final int completedBlocks;
   final int totalBlocks;
+  final String focus;
+  final String energyLevel;
 
   @override
   Widget build(BuildContext context) {
@@ -617,7 +614,7 @@ class _GuidedSessionSummarySheet extends StatelessWidget {
             const Icon(
               Icons.celebration_rounded,
               size: 44,
-              color: Color(0xFF2E7D52),
+              color: AppColors.accent,
             ),
             const SizedBox(height: 12),
             Text(
@@ -633,8 +630,27 @@ class _GuidedSessionSummarySheet extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => WorkoutLogConfirmationSheet(
+                      focus: focus,
+                      energyLevel: energyLevel,
+                    ),
+                  );
+                },
+                child: const Text('Registrar sesión'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Continuar'),
+                child: const Text('Continuar sin registrar'),
               ),
             ),
           ],

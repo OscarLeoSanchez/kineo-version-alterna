@@ -238,17 +238,22 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
           elevation: 0,
         ),
         body: SafeArea(
-          child: ValueListenableBuilder<_PlanGenState>(
-            valueListenable: _stateNotifier,
-            builder: (context, state, _) {
-              if (state.error != null) {
-                return _buildErrorState(context, state);
-              }
-              if (state.isDone) {
-                return _buildDoneState(context, state);
-              }
-              return _buildProgressState(context, state);
-            },
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: ValueListenableBuilder<_PlanGenState>(
+                valueListenable: _stateNotifier,
+                builder: (context, state, _) {
+                  if (state.error != null) {
+                    return _buildErrorState(context, state);
+                  }
+                  if (state.isDone) {
+                    return _buildDoneState(context, state);
+                  }
+                  return _buildProgressState(context, state);
+                },
+              ),
+            ),
           ),
         ),
       ),

@@ -408,6 +408,9 @@ class _DashboardPageState extends State<DashboardPage> {
         }
       } else {
         if (mounted) {
+          setState(() {
+            _profileImagePath = null;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('No se pudo subir la imagen.')),
           );
@@ -415,6 +418,9 @@ class _DashboardPageState extends State<DashboardPage> {
       }
     } catch (_) {
       if (mounted) {
+        setState(() {
+          _profileImagePath = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No se pudo subir la imagen.')),
         );
