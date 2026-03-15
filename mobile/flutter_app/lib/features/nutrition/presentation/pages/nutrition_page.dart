@@ -407,7 +407,7 @@ class _NutritionPageState extends State<NutritionPage>
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
-  Future<void> _submitNutrition({
+  Future<bool> _submitNutrition({
     required String mealLabel,
     required int adherence,
     required int proteinGrams,
@@ -423,7 +423,7 @@ class _NutritionPageState extends State<NutritionPage>
         hydrationLiters: hydrationLiters,
         notes: notes,
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       showNutritionLogConfirmationSheet(
         context,
         mealLabel: mealLabel,
@@ -431,6 +431,16 @@ class _NutritionPageState extends State<NutritionPage>
         hydrationLiters: hydrationLiters.toDouble(),
       );
       if (result.sent || result.queuedOffline) _refreshSilently();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al registrar: $e'),
+          backgroundColor: AppColors.errorDark,
+        ),
+      );
+      return false;
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -445,6 +455,7 @@ class _NutritionPageState extends State<NutritionPage>
     double adherence = 85;
     String mealLabel = _mealLabel;
     bool isSubmittingSheet = false;
+    bool isSuccessSheet = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -569,39 +580,70 @@ class _NutritionPageState extends State<NutritionPage>
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: LoadingButton(
-                              label: 'Guardar',
-                              isLoading: isSubmittingSheet,
-                              onPressed: () async {
-                                setSheetState(() => isSubmittingSheet = true);
-                                final extra = [
-                                  if (nameController.text.trim().isNotEmpty)
-                                    nameController.text.trim(),
-                                  if (kcalController.text.trim().isNotEmpty)
-                                    '${kcalController.text.trim()} kcal',
-                                  if (notesController.text.trim().isNotEmpty)
-                                    notesController.text.trim(),
-                                ].join(' | ');
-                                await _submitNutrition(
-                                  mealLabel: mealLabel,
-                                  adherence: adherence.round(),
-                                  proteinGrams:
-                                      int.tryParse(
-                                        proteinController.text.trim(),
-                                      ) ??
-                                      25,
-                                  hydrationLiters:
-                                      int.tryParse(
-                                        hydrationController.text.trim(),
-                                      ) ??
-                                      1,
-                                  notes: extra,
-                                );
-                                if (context.mounted) {
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                            ),
+                            child: isSuccessSheet
+                                ? FilledButton.icon(
+                                    onPressed: null,
+                                    icon: const Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Guardado'),
+                                  )
+                                : LoadingButton(
+                                    label: 'Guardar',
+                                    isLoading: isSubmittingSheet,
+                                    onPressed: () async {
+                                      setSheetState(
+                                        () => isSubmittingSheet = true,
+                                      );
+                                      final extra = [
+                                        if (nameController.text
+                                            .trim()
+                                            .isNotEmpty)
+                                          nameController.text.trim(),
+                                        if (kcalController.text
+                                            .trim()
+                                            .isNotEmpty)
+                                          '${kcalController.text.trim()} kcal',
+                                        if (notesController.text
+                                            .trim()
+                                            .isNotEmpty)
+                                          notesController.text.trim(),
+                                      ].join(' | ');
+                                      final ok = await _submitNutrition(
+                                        mealLabel: mealLabel,
+                                        adherence: adherence.round(),
+                                        proteinGrams:
+                                            int.tryParse(
+                                              proteinController.text.trim(),
+                                            ) ??
+                                            25,
+                                        hydrationLiters:
+                                            int.tryParse(
+                                              hydrationController.text.trim(),
+                                            ) ??
+                                            1,
+                                        notes: extra,
+                                      );
+                                      if (!context.mounted) return;
+                                      if (ok) {
+                                        setSheetState(() {
+                                          isSubmittingSheet = false;
+                                          isSuccessSheet = true;
+                                        });
+                                        await Future<void>.delayed(
+                                          const Duration(milliseconds: 600),
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                        }
+                                      } else {
+                                        setSheetState(
+                                          () => isSubmittingSheet = false,
+                                        );
+                                      }
+                                    },
+                                  ),
                           ),
                         ],
                       ),
@@ -2413,8 +2455,8 @@ class _HistoryEntryCard extends StatelessWidget {
       confirmDismiss: (_) => showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Eliminar registro'),
-          content: const Text('¿Seguro que quieres eliminar este registro?'),
+          title: const Text('¿Eliminar este registro?'),
+          content: Text(label),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),

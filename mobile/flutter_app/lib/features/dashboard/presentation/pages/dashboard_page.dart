@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../auth/data/services/auth_session_controller.dart';
@@ -103,11 +104,24 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _isQuickLoggingNutrition = false;
   bool _isQuickLoggingWeight = false;
   String? _profileImagePath;
+  String? _avatarUrl;
+  bool _isUploadingAvatar = false;
   bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
+    _loadSavedAvatarUrl();
+  }
+
+  Future<void> _loadSavedAvatarUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('profile_avatar_url');
+    if (saved != null && mounted) {
+      setState(() {
+        _avatarUrl = saved;
+      });
+    }
   }
 
   @override
@@ -344,16 +358,73 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(source: source, imageQuality: 80);
-      if (picked != null && mounted) {
-        setState(() {
-          _profileImagePath = picked.path;
-        });
-      }
+      if (picked == null || !mounted) return;
+
+      // Show local preview immediately and start upload
+      setState(() {
+        _profileImagePath = picked.path;
+        _isUploadingAvatar = true;
+      });
+
+      await _uploadAvatar(File(picked.path));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No se pudo acceder a la imagen.')),
       );
+    }
+  }
+
+  Future<void> _uploadAvatar(File imageFile) async {
+    try {
+      final session = AuthSessionScope.of(context).session;
+      final uri = Uri.parse('http://5.78.42.147:8000/api/v1/users/me/avatar');
+      final request = http.MultipartRequest('POST', uri);
+      if (session != null) {
+        request.headers['Authorization'] = 'Bearer ${session.accessToken}';
+      }
+      request.files.add(
+        await http.MultipartFile.fromPath('file', imageFile.path),
+      );
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (!mounted) return;
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final url = body['avatar_url']?.toString() ??
+            body['url']?.toString() ??
+            body['profile_image_url']?.toString();
+        if (url != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('profile_avatar_url', url);
+          if (mounted) {
+            setState(() {
+              _avatarUrl = url;
+            });
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo subir la imagen.')),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo subir la imagen.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAvatar = false;
+        });
+      }
     }
   }
 
@@ -1358,25 +1429,60 @@ class _DashboardPageState extends State<DashboardPage> {
                       Row(
                         children: [
                           GestureDetector(
-                            onTap: _showProfileImageSheet,
-                            child: CircleAvatar(
-                              radius: 27,
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.16,
-                              ),
-                              backgroundImage: _profileImagePath != null
-                                  ? FileImage(File(_profileImagePath!))
-                                  : null,
-                              child: _profileImagePath == null
-                                  ? Text(
-                                      _initials(data?.fullName ?? 'Coach'),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
+                            onTap: _isUploadingAvatar
+                                ? null
+                                : _showProfileImageSheet,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 27,
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  backgroundImage: _profileImagePath != null
+                                      ? FileImage(File(_profileImagePath!))
+                                      : (_avatarUrl != null
+                                          ? NetworkImage(_avatarUrl!)
+                                              as ImageProvider
+                                          : null),
+                                  child: (_profileImagePath == null &&
+                                          _avatarUrl == null)
+                                      ? Text(
+                                          _initials(data?.fullName ?? 'Coach'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                if (_isUploadingAvatar)
+                                  Container(
+                                    width: 54,
+                                    height: 54,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.45,
                                       ),
-                                    )
-                                  : null,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Center(
+                                      child: SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                            Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 14),

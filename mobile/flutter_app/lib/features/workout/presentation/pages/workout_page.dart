@@ -12,7 +12,6 @@ import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_surface_card.dart';
 import '../../../../shared/widgets/activity_record_detail_sheet.dart';
 import '../../../../shared/widgets/empty_state_widget.dart';
-import '../../../../shared/widgets/loading_button.dart';
 import '../../../../shared/widgets/pressable_card.dart';
 import '../../../../shared/widgets/shimmer_box.dart';
 import '../../data/services/workout_api_service.dart';
@@ -311,6 +310,97 @@ class _WorkoutPageState extends State<WorkoutPage>
     );
     if (result == true) {
       await _refreshSilently();
+    }
+  }
+
+  /// U-01 — Opens the manual registration flow with an empty blocks list so
+  /// users can log any workout without needing a plan active.
+  Future<void> _openManualRegistration(
+    Map<String, dynamic>? selectedDay,
+  ) async {
+    final blocks =
+        (selectedDay?['blocks'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+    final result = await Navigator.of(context).push<_WorkoutRegistrationResult>(
+      PageRouteBuilder<_WorkoutRegistrationResult>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _WorkoutRegistrationPage(
+              blocks: blocks,
+              initialSessionName:
+                  selectedDay?['focus']?.toString() ?? 'Sesión libre',
+              initialEnergyLevel:
+                  selectedDay?['energy_level']?.toString() ?? 'Media',
+            ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curve = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.08),
+              end: Offset.zero,
+            ).animate(curve),
+            child: FadeTransition(opacity: curve, child: child),
+          );
+        },
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() => _isSubmitting = true);
+    final focusLabel = result.sessionName.isEmpty
+        ? 'Sesión libre'
+        : result.sessionName;
+    final notes = [
+      'RPE: ${result.effort.round()}/10',
+      'Tecnica: ${result.technique}',
+      if (result.note.isNotEmpty) result.note,
+    ].join(' | ');
+    try {
+      final submitResult = await const WorkoutLogApiService().submitWorkout(
+        sessionMinutes: selectedDay?['duration_minutes'] as int? ?? 45,
+        focus: focusLabel,
+        energyLevel: result.energyLevel,
+        dayIsoDate: selectedDay?['iso_date']?.toString(),
+        planId: selectedDay?['plan_id'] as int?,
+        blockStates: List.generate(blocks.length, (index) {
+          final block = blocks[index];
+          return {
+            'block_title': block['title']?.toString() ?? 'Bloque',
+            'completed': result.completedBlocks[index],
+            'selected_exercises':
+                (block['selected_exercises'] as List<dynamic>? ?? const [])
+                    .map((item) => item.toString())
+                    .toList(),
+          };
+        }),
+        notes: notes,
+      );
+      await _refreshSilently();
+      if (!mounted) return;
+      if (submitResult.queuedOffline) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sin internet: la sesión quedó guardada localmente.',
+            ),
+          ),
+        );
+      } else {
+        showWorkoutLogConfirmationSheet(
+          context,
+          focus: focusLabel,
+          energyLevel: result.energyLevel,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No pudimos registrar la sesion.')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -796,30 +886,14 @@ class _WorkoutPageState extends State<WorkoutPage>
         const SizedBox(height: 20),
         _buildHistory(context, workouts),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LoadingButton(
-                label: 'Cerrar sesión',
-                icon: Icons.check_circle_outline_rounded,
-                isLoading: _isSubmitting,
-                onPressed:
-                    selectedDay == null ||
-                        selectedDay['is_today'] != true ||
-                        (data?['completed_today'] == true)
-                    ? null
-                    : () => _registerWorkout(selectedDay),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _refreshWorkoutPlan,
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('Actualizar plan'),
-              ),
-            ),
-          ],
+        // U-01 — "Cerrar sesión" moved into _buildRouteCard as "Registrar sesión rápida"
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _refreshWorkoutPlan,
+            icon: const Icon(Icons.auto_awesome_rounded),
+            label: const Text('Actualizar plan'),
+          ),
         ),
       ],
     );
@@ -981,6 +1055,7 @@ class _WorkoutPageState extends State<WorkoutPage>
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
+          // U-01 — Primary CTA: step-by-step guided mode
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -988,8 +1063,96 @@ class _WorkoutPageState extends State<WorkoutPage>
                   ? null
                   : () => _openGuidedSession(selectedDay),
               icon: const Icon(Icons.timer_outlined),
-              label: const Text('Iniciar modo guiado'),
+              label: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Modo entrenamiento paso a paso',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  Text(
+                    'Te guiamos ejercicio por ejercicio con timer',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
+                  ),
+                ],
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                alignment: Alignment.centerLeft,
+              ),
             ),
+          ),
+          const SizedBox(height: 10),
+          // U-01 — Secondary CTAs: quick log & manual
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: selectedDay == null ||
+                          selectedDay['is_today'] != true
+                      ? null
+                      : () => _registerWorkout(selectedDay),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    alignment: Alignment.centerLeft,
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Registrar sesión rápida',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        'Completa tu entrenamiento y regístralo al final',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _openManualRegistration(selectedDay),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    alignment: Alignment.centerLeft,
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Registrar manualmente',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        'Añade tus ejercicios y series manualmente',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 

@@ -64,12 +64,16 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
   }
 
   Future<bool> _onWillPop() async {
-    if (_completedBlocks.isNotEmpty) {
+    final sessionActive = _isRunning || _completedBlocks.isNotEmpty;
+    if (sessionActive) {
+      final summary = _completedBlocks.isEmpty
+          ? 'Aún no has completado ningún bloque.'
+          : 'Completados: ${_completedBlocks.join(', ')}.';
       final ok = await showDialog<bool>(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('¿Salir de la sesión?'),
-          content: const Text('Perderás el progreso no guardado.'),
+          title: const Text('¿Finalizar sesión?'),
+          content: Text(summary),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -77,7 +81,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Salir sin guardar'),
+              child: const Text('Finalizar'),
             ),
           ],
         ),
@@ -176,6 +180,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
           _isRunning = false;
         });
         return;
+      }
+      // U-02 — haptic feedback in the last 3 seconds of each exercise step
+      if (_remainingSeconds <= 3) {
+        HapticFeedback.lightImpact();
       }
       setState(() {
         _remainingSeconds -= 1;
@@ -277,6 +285,8 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
         notes: notes,
       );
       if (!mounted) return;
+      // Brief success icon before showing sheets
+      setState(() => _isSaving = false);
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
@@ -299,6 +309,14 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar la sesión: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -394,8 +412,21 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
                 ),
               ),
               const SizedBox(height: 16),
+              // U-02 — exercise name prominently above timer
+              Text(
+                _currentStep.title,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF143C3A),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
               AppBarTimerCard(
                 isRunning: _isRunning,
+                remainingSeconds: _remainingSeconds,
+                totalSeconds: _currentStep.suggestedSeconds,
                 onToggle: _toggleTimer,
                 onReset: _resetTimer,
               ),
@@ -434,12 +465,21 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      onPressed: _nextStep,
-                      child: Text(
-                        _stepIndex == _steps.length - 1
-                            ? 'Finalizar'
-                            : 'Siguiente',
-                      ),
+                      onPressed: _isSaving ? null : _nextStep,
+                      child: _isSaving && _stepIndex == _steps.length - 1
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              _stepIndex == _steps.length - 1
+                                  ? 'Finalizar'
+                                  : 'Siguiente',
+                            ),
                     ),
                   ),
                 ],
@@ -460,38 +500,94 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
   }
 }
 
+/// U-02 — Enhanced timer card with circular progress indicator and clear
+/// play/pause state feedback.
 class AppBarTimerCard extends StatelessWidget {
   const AppBarTimerCard({
     super.key,
     required this.isRunning,
+    required this.remainingSeconds,
+    required this.totalSeconds,
     required this.onToggle,
     required this.onReset,
   });
 
   final bool isRunning;
+  final int remainingSeconds;
+  final int totalSeconds;
   final VoidCallback onToggle;
   final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
+    final progress =
+        totalSeconds > 0 ? remainingSeconds / totalSeconds : 0.0;
+    final minutes = (remainingSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (remainingSeconds % 60).toString().padLeft(2, '0');
+    final timeLabel = '$minutes:$seconds';
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFD8D1C4)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onToggle,
-              icon: Icon(isRunning ? Icons.pause_rounded : Icons.play_arrow),
-              label: Text(isRunning ? 'Pausar timer' : 'Iniciar timer'),
+          // U-02 — Stack: circular progress ring with countdown centred inside
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: progress.clamp(0.0, 1.0),
+                    strokeWidth: 8,
+                    backgroundColor: const Color(0xFFE5E7EB),
+                    color: isRunning
+                        ? const Color(0xFF143C3A)
+                        : const Color(0xFF9CA3AF),
+                  ),
+                ),
+                Text(
+                  timeLabel,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1C1C1E),
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          OutlinedButton(onPressed: onReset, child: const Text('Reset')),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              // U-02 — Play/pause button with clear icon + background color change
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onToggle,
+                  icon: Icon(
+                    isRunning
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
+                  label: Text(isRunning ? 'Pausar' : 'Iniciar'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isRunning
+                        ? const Color(0xFF2E7D52) // green when running
+                        : const Color(0xFF6B7280), // grey when paused/stopped
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(onPressed: onReset, child: const Text('Reset')),
+            ],
+          ),
         ],
       ),
     );

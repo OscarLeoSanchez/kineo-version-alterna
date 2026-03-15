@@ -26,6 +26,7 @@ class _PlanGenState {
   final double progress;
   final bool isDone;
   final String? error;
+  final bool isTimeout;
   final Map<String, dynamic> plan;
 
   const _PlanGenState({
@@ -33,6 +34,7 @@ class _PlanGenState {
     this.progress = 0,
     this.isDone = false,
     this.error,
+    this.isTimeout = false,
     this.plan = const {},
   });
 
@@ -41,6 +43,7 @@ class _PlanGenState {
     double? progress,
     bool? isDone,
     String? error,
+    bool? isTimeout,
     Map<String, dynamic>? plan,
   }) {
     return _PlanGenState(
@@ -48,6 +51,7 @@ class _PlanGenState {
       progress: progress ?? this.progress,
       isDone: isDone ?? this.isDone,
       error: error,
+      isTimeout: isTimeout ?? this.isTimeout,
       plan: plan ?? this.plan,
     );
   }
@@ -58,7 +62,11 @@ class _PlanGenState {
 // ---------------------------------------------------------------------------
 
 class PlanGenerationPage extends StatefulWidget {
-  const PlanGenerationPage({super.key});
+  /// Optionally pass the existing plan so it can be offered as fallback
+  /// when the generation times out.
+  const PlanGenerationPage({super.key, this.existingPlan});
+
+  final Map<String, dynamic>? existingPlan;
 
   @override
   State<PlanGenerationPage> createState() => _PlanGenerationPageState();
@@ -108,15 +116,17 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('¿Cancelar generación?'),
-          content: const Text('El plan no se guardará si sales ahora.'),
+          content: const Text(
+            'Si cancelas, perderás el progreso actual.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Continuar'),
+              child: const Text('Seguir esperando'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Salir'),
+              child: const Text('Cancelar generación'),
             ),
           ],
         ),
@@ -156,7 +166,8 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
     _timeoutTimer = Timer(const Duration(seconds: 120), () {
       if (mounted && _isGenerating) {
         _stateNotifier.value = _stateNotifier.value.copyWith(
-          error: 'La generación está tardando demasiado. Intenta de nuevo.',
+          error: 'La generación está tardando más de lo esperado.',
+          isTimeout: true,
         );
         _pulseController.stop();
         _subscription?.cancel();
@@ -231,7 +242,7 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
             valueListenable: _stateNotifier,
             builder: (context, state, _) {
               if (state.error != null) {
-                return _buildErrorState(context, state.error!);
+                return _buildErrorState(context, state);
               }
               if (state.isDone) {
                 return _buildDoneState(context, state);
@@ -417,9 +428,14 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
     );
   }
 
-  Widget _buildErrorState(BuildContext context, String error) {
+  Widget _buildErrorState(BuildContext context, _PlanGenState state) {
     final theme = Theme.of(context);
-    return Padding(
+    final error = state.error!;
+    final isTimeout = state.isTimeout;
+    final hasExistingPlan = widget.existingPlan != null &&
+        widget.existingPlan!.isNotEmpty;
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 48, 24, 40),
       child: Column(
         children: [
@@ -428,19 +444,25 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
               width: 88,
               height: 88,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFE8E8),
+                color: isTimeout
+                    ? const Color(0xFFFFF3CD)
+                    : const Color(0xFFFFE8E8),
                 borderRadius: BorderRadius.circular(44),
               ),
-              child: const Icon(
-                Icons.error_outline_rounded,
+              child: Icon(
+                isTimeout
+                    ? Icons.hourglass_bottom_rounded
+                    : Icons.error_outline_rounded,
                 size: 44,
-                color: Color(0xFFDC2626),
+                color: isTimeout
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFFDC2626),
               ),
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            'Algo salio mal',
+            isTimeout ? 'La generación está tardando' : 'Algo salió mal',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -451,7 +473,9 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFE8E8),
+              color: isTimeout
+                  ? const Color(0xFFFFF3CD)
+                  : const Color(0xFFFFE8E8),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
@@ -472,6 +496,18 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
               label: const Text('Reintentar'),
             ),
           ),
+          if (isTimeout && hasExistingPlan) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pop(widget.existingPlan),
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('Usar plan anterior'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
