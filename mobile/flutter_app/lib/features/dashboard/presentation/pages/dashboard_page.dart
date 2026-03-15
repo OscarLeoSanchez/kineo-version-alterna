@@ -1532,9 +1532,15 @@ class _DashboardPageState extends State<DashboardPage> {
                             icon: Icons.auto_awesome_rounded,
                             label: 'Mi Plan',
                             color: AppColors.primaryTeal,
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pushNamed('/plan-generation'),
+                            onTap: () async {
+                              final result = await Navigator.of(
+                                context,
+                              ).pushNamed('/plan-generation');
+                              if (result == true &&
+                                  widget.onNavigateToTab != null) {
+                                await widget.onNavigateToTab!(1);
+                              }
+                            },
                           ),
                           const SizedBox(width: 8),
                           _HeaderActionChip(
@@ -1549,7 +1555,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             label: 'Ajustes',
                             color: AppColors.purple,
                             onTap: () =>
-                                Navigator.of(context).pushNamed('/profile'),
+                                Navigator.of(context).pushNamed('/goals'),
                           ),
                         ],
                       ),
@@ -2006,9 +2012,16 @@ class _HeaderActionChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.6)),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -3563,7 +3576,34 @@ class _WeeklySummaryCard extends StatelessWidget {
 
               final bool isTextLight = hasWorkout && hasNutrition;
 
-              return Column(
+              // Compute the tap message for this day
+              final bool isFuture = day.isAfter(today) && !isToday;
+              String tapMessage;
+              if (isFuture) {
+                tapMessage = 'Día futuro';
+              } else if (hasWorkout && hasNutrition) {
+                tapMessage = 'Día completo ✓ — Entrenaste y registraste tus comidas';
+              } else if (hasWorkout) {
+                tapMessage = 'Entrenaste este día ✓';
+              } else if (hasNutrition) {
+                tapMessage = 'Registraste nutrición ✓';
+              } else if (isToday) {
+                tapMessage = '¡Hoy es tu día! Completa tu entrenamiento y nutrición';
+              } else {
+                tapMessage = 'Sin actividad registrada';
+              }
+
+              return GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(tapMessage),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
@@ -3598,6 +3638,7 @@ class _WeeklySummaryCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
               );
             }),
           ),

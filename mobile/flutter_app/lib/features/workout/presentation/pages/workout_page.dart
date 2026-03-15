@@ -1800,7 +1800,9 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Cerrar sesión')),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
+        bottom: false,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
           children: [

@@ -28,12 +28,23 @@ class _ProgressPageState extends State<ProgressPage> {
   final TextEditingController _thighController = TextEditingController();
   final TextEditingController _muscleMassController = TextEditingController();
   final TextEditingController _sleepController = TextEditingController();
-  final TextEditingController _energyController = TextEditingController();
-  final TextEditingController _moodController = TextEditingController();
   final TextEditingController _stepsController = TextEditingController();
   final TextEditingController _restingHeartRateController =
       TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  // Optional extra body measurements
+  final TextEditingController _neckController = TextEditingController();
+  final TextEditingController _calfController = TextEditingController();
+  final TextEditingController _forearmController = TextEditingController();
+  final TextEditingController _backController = TextEditingController();
+  // Energy and mood replaced with chip selectors (null = not selected)
+  int? _selectedEnergy;
+  int? _selectedMood;
+  // Which optional measurement fields to show
+  bool _showNeck = false;
+  bool _showCalf = false;
+  bool _showForearm = false;
+  bool _showBack = false;
   bool _isSubmitting = false;
   String _selectedPreset = 'Peso';
 
@@ -65,11 +76,13 @@ class _ProgressPageState extends State<ProgressPage> {
     _thighController.dispose();
     _muscleMassController.dispose();
     _sleepController.dispose();
-    _energyController.dispose();
-    _moodController.dispose();
     _stepsController.dispose();
     _restingHeartRateController.dispose();
     _notesController.dispose();
+    _neckController.dispose();
+    _calfController.dispose();
+    _forearmController.dispose();
+    _backController.dispose();
     super.dispose();
   }
 
@@ -83,10 +96,8 @@ class _ProgressPageState extends State<ProgressPage> {
     final thigh = double.tryParse(_thighController.text.replaceAll(',', '.'));
     final muscleMass = double.tryParse(_muscleMassController.text.replaceAll(',', '.'));
     final sleep = double.tryParse(_sleepController.text.replaceAll(',', '.'));
-    final energyRaw = _energyController.text.trim();
-    final energy = int.tryParse(energyRaw);
-    final moodRaw = _moodController.text.trim();
-    final mood = int.tryParse(moodRaw);
+    final energy = _selectedEnergy;
+    final mood = _selectedMood;
     final steps = int.tryParse(_stepsController.text);
     final restingHeartRate = int.tryParse(_restingHeartRateController.text);
     final notes = _notesController.text.trim();
@@ -94,18 +105,6 @@ class _ProgressPageState extends State<ProgressPage> {
     if (weight == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa un peso valido.')),
-      );
-      return;
-    }
-    if (energyRaw.isNotEmpty && (energy == null || energy < 1 || energy > 10)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El nivel de energía debe ser un número entre 1 y 10.')),
-      );
-      return;
-    }
-    if (moodRaw.isNotEmpty && (mood == null || mood < 1 || mood > 10)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El estado de ánimo debe ser un número entre 1 y 10.')),
       );
       return;
     }
@@ -130,6 +129,10 @@ class _ProgressPageState extends State<ProgressPage> {
         steps: steps,
         restingHeartRate: restingHeartRate,
         notes: notes.isNotEmpty ? notes : null,
+        neckCm: double.tryParse(_neckController.text.replaceAll(',', '.')),
+        calfCm: double.tryParse(_calfController.text.replaceAll(',', '.')),
+        forearmCm: double.tryParse(_forearmController.text.replaceAll(',', '.')),
+        backCm: double.tryParse(_backController.text.replaceAll(',', '.')),
       );
       _weightController.clear();
       _waistController.clear();
@@ -140,12 +143,16 @@ class _ProgressPageState extends State<ProgressPage> {
       _thighController.clear();
       _muscleMassController.clear();
       _sleepController.clear();
-      _energyController.clear();
-      _moodController.clear();
       _stepsController.clear();
       _restingHeartRateController.clear();
       _notesController.clear();
+      _neckController.clear();
+      _calfController.clear();
+      _forearmController.clear();
+      _backController.clear();
       setState(() {
+        _selectedEnergy = null;
+        _selectedMood = null;
         _future = _loadProgress();
       });
       if (!mounted) return;
@@ -518,6 +525,100 @@ class _ProgressPageState extends State<ProgressPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                // ── Optional extra measurements ──────────────────────────
+                Text(
+                  'Medidas adicionales',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilterChip(
+                      label: const Text('+ Cuello'),
+                      selected: _showNeck,
+                      onSelected: (v) => setState(() {
+                        _showNeck = v;
+                        if (!v) _neckController.clear();
+                      }),
+                    ),
+                    FilterChip(
+                      label: const Text('+ Pantorrilla'),
+                      selected: _showCalf,
+                      onSelected: (v) => setState(() {
+                        _showCalf = v;
+                        if (!v) _calfController.clear();
+                      }),
+                    ),
+                    FilterChip(
+                      label: const Text('+ Antebrazo'),
+                      selected: _showForearm,
+                      onSelected: (v) => setState(() {
+                        _showForearm = v;
+                        if (!v) _forearmController.clear();
+                      }),
+                    ),
+                    FilterChip(
+                      label: const Text('+ Espalda'),
+                      selected: _showBack,
+                      onSelected: (v) => setState(() {
+                        _showBack = v;
+                        if (!v) _backController.clear();
+                      }),
+                    ),
+                  ],
+                ),
+                if (_showNeck || _showCalf || _showForearm || _showBack) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      if (_showNeck)
+                        SizedBox(
+                          width: 140,
+                          child: TextField(
+                            controller: _neckController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Cuello (cm)'),
+                          ),
+                        ),
+                      if (_showCalf)
+                        SizedBox(
+                          width: 140,
+                          child: TextField(
+                            controller: _calfController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Pantorrilla (cm)'),
+                          ),
+                        ),
+                      if (_showForearm)
+                        SizedBox(
+                          width: 140,
+                          child: TextField(
+                            controller: _forearmController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Antebrazo (cm)'),
+                          ),
+                        ),
+                      if (_showBack)
+                        SizedBox(
+                          width: 140,
+                          child: TextField(
+                            controller: _backController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Espalda (cm)'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ],
@@ -562,6 +663,50 @@ class _ProgressPageState extends State<ProgressPage> {
               decoration: const InputDecoration(
                 labelText: 'Frecuencia cardiaca en reposo',
               ),
+            ),
+            const SizedBox(height: 16),
+            // ── Energy level chips ────────────────────────────────────────
+            Text(
+              'Nivel de energía',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _EnergyMoodChips(
+              options: const [
+                _ChipOption(label: '😔 1–2', value: 1),
+                _ChipOption(label: '😐 3–4', value: 3),
+                _ChipOption(label: '😊 5–6', value: 5),
+                _ChipOption(label: '😄 7–8', value: 7),
+                _ChipOption(label: '🤩 9–10', value: 9),
+              ],
+              selected: _selectedEnergy,
+              onSelected: (v) => setState(() => _selectedEnergy = v),
+            ),
+            const SizedBox(height: 14),
+            // ── Mood score chips ──────────────────────────────────────────
+            Text(
+              'Estado de ánimo',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _EnergyMoodChips(
+              options: const [
+                _ChipOption(label: '😔 1–2', value: 1),
+                _ChipOption(label: '😐 3–4', value: 3),
+                _ChipOption(label: '😊 5–6', value: 5),
+                _ChipOption(label: '😄 7–8', value: 7),
+                _ChipOption(label: '🤩 9–10', value: 9),
+              ],
+              selected: _selectedMood,
+              onSelected: (v) => setState(() => _selectedMood = v),
             ),
           ],
         );
@@ -1391,4 +1536,59 @@ class _WeightLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _WeightLinePainter oldDelegate) =>
       oldDelegate.points != points;
+}
+
+// ─── Energy / Mood chip selector helpers ──────────────────────────────────────
+
+class _ChipOption {
+  final String label;
+  final int value;
+
+  const _ChipOption({required this.label, required this.value});
+}
+
+class _EnergyMoodChips extends StatelessWidget {
+  const _EnergyMoodChips({
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<_ChipOption> options;
+  final int? selected;
+  final void Function(int?) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: options.map((opt) {
+        final isSelected = selected == opt.value;
+        return GestureDetector(
+          onTap: () => onSelected(isSelected ? null : opt.value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primary : Colors.transparent,
+              border: Border.all(
+                color: isSelected ? AppColors.primary : AppColors.neutral,
+                width: 1.5,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              opt.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppColors.textSecondary,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 }

@@ -186,13 +186,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
             },
           ),
           _TopBarIcon(
-            icon: Icons.account_circle_rounded,
-            tooltip: 'Perfil',
-            onTap: () {
-              Navigator.of(context).pushNamed(AppRouter.profile);
-            },
-          ),
-          _TopBarIcon(
             icon: Icons.logout_rounded,
             tooltip: 'Cerrar sesion',
             onTap: _logout,

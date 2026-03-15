@@ -424,7 +424,7 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(state.plan),
+            onPressed: () => Navigator.of(context).pop(true),
             icon: const Icon(Icons.arrow_forward_rounded),
             label: const Text('Ver mi plan'),
           ),

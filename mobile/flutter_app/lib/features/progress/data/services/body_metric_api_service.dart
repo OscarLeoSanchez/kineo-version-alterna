@@ -23,6 +23,10 @@ class BodyMetricApiService {
     int? steps,
     int? restingHeartRate,
     String? notes,
+    double? neckCm,
+    double? calfCm,
+    double? forearmCm,
+    double? backCm,
   }) async {
     final session = await AuthSessionStore().load();
     final Map<String, dynamic> payload = {
@@ -40,6 +44,10 @@ class BodyMetricApiService {
     if (moodScore != null) payload['mood_score'] = moodScore;
     if (steps != null) payload['steps'] = steps;
     if (restingHeartRate != null) payload['resting_heart_rate'] = restingHeartRate;
+    if (neckCm != null) payload['neck_cm'] = neckCm;
+    if (calfCm != null) payload['calf_cm'] = calfCm;
+    if (forearmCm != null) payload['forearm_cm'] = forearmCm;
+    if (backCm != null) payload['back_cm'] = backCm;
     if (notes != null && notes.isNotEmpty) payload['notes'] = notes;
     final response = await http.post(
       Uri.parse('${AppConfig.apiBaseUrl}/api/v1/activity/body-metrics'),
