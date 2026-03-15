@@ -1606,6 +1606,13 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 if ((progress?['insights'] as List<dynamic>? ?? []).isNotEmpty)
                   const SizedBox(height: 18),
+                // F-05 — Weekly summary card
+                _WeeklySummaryCard(
+                  weekDays: (progress?['week_days'] as List<dynamic>?)
+                      ?.map((d) => Map<String, dynamic>.from(d as Map))
+                      .toList(),
+                ),
+                const SizedBox(height: 18),
                 Text('Tu plan de hoy', style: theme.textTheme.headlineLarge),
                 const SizedBox(height: 12),
                 _PrimaryActionCard(
@@ -3432,6 +3439,128 @@ class _WeightTrendIndicator extends StatelessWidget {
           style: TextStyle(fontSize: 10, color: Colors.black45),
         ),
       ],
+    );
+  }
+}
+
+// ─── F-05: Weekly Summary Card ──────────────────────────────────────────────
+
+class _WeeklySummaryCard extends StatelessWidget {
+  /// Optional list of day data from API. Each map may contain:
+  ///   'iso_date': String, 'has_workout': bool, 'has_nutrition': bool
+  final List<Map<String, dynamic>>? weekDays;
+
+  const _WeeklySummaryCard({this.weekDays});
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    // Monday of current week
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+
+    // Build a map of iso_date -> day data for quick lookup
+    final Map<String, Map<String, dynamic>> dataByDate = {};
+    if (weekDays != null) {
+      for (final d in weekDays!) {
+        final key = d['iso_date']?.toString() ?? '';
+        if (key.isNotEmpty) dataByDate[key] = d;
+      }
+    }
+
+    const dayLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Esta semana',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(7, (i) {
+              final day = monday.add(Duration(days: i));
+              final isoDate =
+                  '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+              final isToday =
+                  day.year == today.year &&
+                  day.month == today.month &&
+                  day.day == today.day;
+              final dayData = dataByDate[isoDate];
+              final hasWorkout = dayData?['has_workout'] == true;
+              final hasNutrition = dayData?['has_nutrition'] == true;
+
+              // Determine fill/border colors
+              Color fillColor;
+              Color borderColor;
+              if (hasWorkout && hasNutrition) {
+                fillColor = AppColors.primary;
+                borderColor = AppColors.primary;
+              } else if (hasWorkout) {
+                fillColor = AppColors.primaryLight;
+                borderColor = AppColors.primary;
+              } else if (hasNutrition) {
+                fillColor = AppColors.accentLight;
+                borderColor = AppColors.accent;
+              } else {
+                fillColor = Colors.transparent;
+                borderColor = AppColors.neutral;
+              }
+
+              final bool isTextLight = hasWorkout && hasNutrition;
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: fillColor,
+                      border: Border.all(color: borderColor, width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      dayLabels[i],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isTextLight
+                            ? Colors.white
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isToday
+                          ? AppColors.primary
+                          : Colors.transparent,
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -2378,6 +2378,60 @@ class _HistorySection extends StatelessWidget {
 
   const _HistorySection({required this.history, required this.onTap});
 
+  /// Parses an ISO date string like "2024-03-10" into a DateTime.
+  DateTime? _parseDate(String isoDate) {
+    try {
+      return DateTime.parse(isoDate);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns a formatted label: "Lunes, 10 mar"
+  String _formatDateLabel(String isoDate) {
+    final dt = _parseDate(isoDate);
+    if (dt == null) return isoDate;
+    const weekdays = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
+    const months = [
+      'ene',
+      'feb',
+      'mar',
+      'abr',
+      'may',
+      'jun',
+      'jul',
+      'ago',
+      'sep',
+      'oct',
+      'nov',
+      'dic',
+    ];
+    final weekday = weekdays[dt.weekday - 1];
+    final month = months[dt.month - 1];
+    return '$weekday, ${dt.day} $month';
+  }
+
+  /// Sums the kcal for all entries in a date group.
+  int _totalKcal(List<Map<String, dynamic>> entries) {
+    int total = 0;
+    for (final e in entries) {
+      final kcal =
+          (e['calories'] as num?)?.toInt() ??
+          (e['total_calories'] as num?)?.toInt() ??
+          0;
+      total += kcal;
+    }
+    return total;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (history.isEmpty) {
@@ -2397,24 +2451,23 @@ class _HistorySection extends StatelessWidget {
       grouped.putIfAbsent(date, () => []).add(entry);
     }
 
+    // Sort dates descending (most recent first)
+    final sortedKeys = grouped.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: grouped.entries.map((group) {
+      children: sortedKeys.map((dateKey) {
+        final entries = grouped[dateKey]!;
+        final kcal = _totalKcal(entries);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Date separator
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                group.key,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Colors.black45,
-                  letterSpacing: 0.6,
-                ),
-              ),
+            _DateHeader(
+              label: _formatDateLabel(dateKey),
+              kcal: kcal,
             ),
-            ...group.value.map(
+            ...entries.map(
               (entry) =>
                   _HistoryEntryCard(entry: entry, onTap: () => onTap(entry)),
             ),
@@ -3034,6 +3087,39 @@ class _ShoppingListCTA extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded, color: _kBrand),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Date Header ───────────────────────────────────────────────────────────────
+
+class _DateHeader extends StatelessWidget {
+  final String label;
+  final int kcal;
+
+  const _DateHeader({required this.label, required this.kcal});
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = kcal > 0 ? '$label — $kcal kcal' : label;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            caption,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Colors.black45,
+              letterSpacing: 0.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Divider(height: 1, thickness: 0.8, color: AppColors.neutral),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
