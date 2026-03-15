@@ -55,12 +55,15 @@ class _HomeShellPageState extends State<HomeShellPage> {
     ),
   ];
 
-  final _pages = const [
-    DashboardPage(key: PageStorageKey('dashboard-page')),
-    WorkoutPage(key: PageStorageKey('workout-page')),
-    NutritionPage(key: PageStorageKey('nutrition-page')),
-    ProgressPage(key: PageStorageKey('progress-page')),
-    ControlCenterPage(key: PageStorageKey('control-center-page')),
+  List<Widget> get _pages => [
+    DashboardPage(
+      key: const PageStorageKey('dashboard-page'),
+      onNavigateToTab: _changeTab,
+    ),
+    const WorkoutPage(key: PageStorageKey('workout-page')),
+    const NutritionPage(key: PageStorageKey('nutrition-page')),
+    const ProgressPage(key: PageStorageKey('progress-page')),
+    const ControlCenterPage(key: PageStorageKey('control-center-page')),
   ];
 
   Future<void> _logout() async {

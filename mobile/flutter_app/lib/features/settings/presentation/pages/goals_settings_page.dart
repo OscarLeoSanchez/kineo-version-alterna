@@ -206,7 +206,18 @@ class _GoalsSettingsPageState extends State<GoalsSettingsPage> {
                 if (_reportMarkdown != null) ...[
                   const SizedBox(height: 20),
                   AppSurfaceCard(
-                    child: SelectableText(_reportMarkdown!),
+                    child: SizedBox(
+                      height: 320,
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          _reportMarkdown!
+                              .replaceAll(RegExp(r'#{1,6}\s'), '')
+                              .replaceAll('**', '')
+                              .replaceAll('*', '')
+                              .replaceAll(RegExp(r'^-\s', multiLine: true), '• '),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ],

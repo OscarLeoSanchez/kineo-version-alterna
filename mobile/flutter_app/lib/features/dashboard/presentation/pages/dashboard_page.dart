@@ -92,7 +92,9 @@ const _focusQuickOptions = <String>[
 ];
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  const DashboardPage({super.key, this.onNavigateToTab});
+
+  final Future<void> Function(int)? onNavigateToTab;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -1609,6 +1611,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     insights: (progress!['insights'] as List<dynamic>)
                         .map((item) => Map<String, dynamic>.from(item as Map))
                         .toList(),
+                    onNavigateToTab: widget.onNavigateToTab,
                   ),
                 if ((progress?['insights'] as List<dynamic>? ?? []).isNotEmpty)
                   const SizedBox(height: 18),
@@ -3246,8 +3249,9 @@ class _StreakBadgeState extends State<_StreakBadge> {
 
 class _InsightsPanel extends StatefulWidget {
   final List<Map<String, dynamic>> insights;
+  final Future<void> Function(int)? onNavigateToTab;
 
-  const _InsightsPanel({required this.insights});
+  const _InsightsPanel({required this.insights, this.onNavigateToTab});
 
   @override
   State<_InsightsPanel> createState() => _InsightsPanelState();
@@ -3353,15 +3357,47 @@ class _InsightsPanelState extends State<_InsightsPanel> {
                             ],
                             if (action != null && action.isNotEmpty) ...[
                               const Spacer(),
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(0, 24),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                onPressed: () {},
-                                child: const Text('Ver'),
+                              Builder(
+                                builder: (context) {
+                                  final category = (insight['category']
+                                          ?.toString() ??
+                                      insight['type']?.toString() ??
+                                      '')
+                                      .toLowerCase();
+                                  final bool isWorkout =
+                                      category.contains('workout') ||
+                                      category.contains('ejercicio');
+                                  final bool isNutrition =
+                                      category.contains('nutricion') ||
+                                      category.contains('nutrition') ||
+                                      category.contains('comida');
+                                  final bool isProgress =
+                                      category.contains('progreso') ||
+                                      category.contains('progress') ||
+                                      category.contains('peso');
+                                  if (!isWorkout && !isNutrition && !isProgress) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 24),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () {
+                                      if (isWorkout) {
+                                        widget.onNavigateToTab?.call(1);
+                                      } else if (isNutrition) {
+                                        widget.onNavigateToTab?.call(2);
+                                      } else if (isProgress) {
+                                        Navigator.of(context)
+                                            .pushNamed('/progress');
+                                      }
+                                    },
+                                    child: const Text('Ver'),
+                                  );
+                                },
                               ),
                             ],
                           ],

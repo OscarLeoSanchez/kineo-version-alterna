@@ -306,8 +306,13 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al guardar la sesión: $e'),
-          backgroundColor: Colors.red.shade700,
+          content: const Text('No se pudo guardar la sesión. Intenta de nuevo.'),
+          backgroundColor: AppColors.errorDark,
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
         ),
       );
     } finally {
