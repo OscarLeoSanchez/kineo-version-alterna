@@ -602,7 +602,13 @@ class _DashboardPageState extends State<DashboardPage> {
     final durationController = TextEditingController(
       text: '${item['session_minutes'] ?? 45}',
     );
-    String energyLevel = item['energy_level']?.toString() ?? 'Media';
+    // Normalise to one of Alta / Media / Baja regardless of what the API returns
+    final rawEnergy = item['energy_level']?.toString().toLowerCase() ?? '';
+    String energyLevel = rawEnergy.contains('alt') || rawEnergy.contains('much')
+        ? 'Alta'
+        : rawEnergy.contains('baj') || rawEnergy.contains('cans')
+            ? 'Baja'
+            : 'Media';
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -625,18 +631,37 @@ class _DashboardPageState extends State<DashboardPage> {
                     decoration: const InputDecoration(labelText: 'Duracion'),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: energyLevel,
-                    items: const [
-                      DropdownMenuItem(value: 'Alta', child: Text('Alta')),
-                      DropdownMenuItem(value: 'Media', child: Text('Media')),
-                      DropdownMenuItem(value: 'Baja', child: Text('Baja')),
-                    ],
-                    onChanged: (value) {
-                      setModalState(() {
-                        energyLevel = value ?? 'Media';
-                      });
-                    },
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Energía', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Alta', 'Media', 'Baja'].map((level) {
+                      final selected = energyLevel == level;
+                      return GestureDetector(
+                        onTap: () => setModalState(() => energyLevel = level),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected ? AppColors.primary : Colors.transparent,
+                            border: Border.all(color: selected ? AppColors.primary : AppColors.neutral),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            level,
+                            style: TextStyle(
+                              color: selected ? Colors.white : AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               );
