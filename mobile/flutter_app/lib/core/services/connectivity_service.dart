@@ -52,7 +52,7 @@ class ConnectivityService {
       final socket = await Socket.connect(
         '1.1.1.1',
         53,
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 3),
       );
       socket.destroy();
       return true;

@@ -11,6 +11,7 @@ import '../../../workout/presentation/pages/workout_page.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/session_data_cache.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/offline_banner.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../plans/data/services/plan_api_service.dart';
@@ -29,7 +30,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
   int _selectedIndex = 0;
   bool _hasProfile = false;
   bool _loadingProfile = true;
-  late final PageController _pageController;
+  late final List<Widget> _pages;
+  PageController _pageController = PageController();
   bool _showPageSplash = false;
   bool _isOnline = true;
   StreamSubscription<bool>? _connectivitySub;
@@ -61,16 +63,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
     ),
   ];
 
-  List<Widget> get _pages => [
-    DashboardPage(
-      key: const PageStorageKey('dashboard-page'),
-      onNavigateToTab: _changeTab,
-    ),
-    const WorkoutPage(key: PageStorageKey('workout-page')),
-    const NutritionPage(key: PageStorageKey('nutrition-page')),
-    const ProgressPage(key: PageStorageKey('progress-page')),
-    const ControlCenterPage(key: PageStorageKey('control-center-page')),
-  ];
 
   Future<void> _logout() async {
     await AuthSessionScope.of(context).logout();
@@ -83,6 +75,16 @@ class _HomeShellPageState extends State<HomeShellPage> {
   @override
   void initState() {
     super.initState();
+    _pages = [
+      DashboardPage(
+        key: const PageStorageKey('dashboard-page'),
+        onNavigateToTab: _changeTab,
+      ),
+      const WorkoutPage(key: PageStorageKey('workout-page')),
+      const NutritionPage(key: PageStorageKey('nutrition-page')),
+      const ProgressPage(key: PageStorageKey('progress-page')),
+      const ControlCenterPage(key: PageStorageKey('control-center-page')),
+    ];
     _pageController = PageController();
     _loadProfileStatus();
     _warmUpPrimaryData();
@@ -92,7 +94,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
   void _initConnectivity() {
     final service = ConnectivityService.instance;
     _isOnline = service.currentlyOnline;
-    service.startPolling();
+    service.startPolling(interval: const Duration(seconds: 15));
     _connectivitySub = service.isOnline.listen((online) {
       if (!mounted) return;
       setState(() => _isOnline = online);
@@ -205,7 +207,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
             child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF5EFE4), Color(0xFFEAEFEC)],
+            colors: [AppColors.surfaceCanvas, AppColors.surfaceMist],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -227,10 +229,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
                   });
                 });
               },
-              children: List.generate(
-                _pages.length,
-                (index) => _ShellStage(child: _pages[index]),
-              ),
+              children: _pages.map((page) => _ShellStage(child: page)).toList(),
             ),
             IgnorePointer(
               ignoring: !_showPageSplash,
@@ -241,7 +240,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
                 child: DecoratedBox(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Color(0xFFF5E8D7), Color(0xFFE3EEE8)],
+                      colors: [AppColors.gradientSurfaceStart, AppColors.gradientSurfaceEnd],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -282,10 +281,10 @@ class _HomeShellPageState extends State<HomeShellPage> {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: const Color(0xFFD6DDD7)),
+              border: Border.all(color: AppColors.cardBorderWarm),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+                  color: AppColors.primary.withValues(alpha: 0.08),
                   blurRadius: 24,
                   offset: const Offset(0, 10),
                 ),
@@ -338,7 +337,7 @@ class _TopBarIcon extends StatelessWidget {
         child: IconButton(
           onPressed: onTap,
           tooltip: tooltip,
-          icon: Icon(icon, color: const Color(0xFF143C3A)),
+          icon: Icon(icon, color: AppColors.primary),
         ),
       ),
     );
