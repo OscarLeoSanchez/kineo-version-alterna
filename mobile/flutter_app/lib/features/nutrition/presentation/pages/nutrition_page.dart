@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/services/session_data_cache.dart';
 import '../../../../shared/widgets/activity_record_detail_sheet.dart';
 import '../../../../shared/widgets/app_section_title.dart';
+import '../../../../shared/widgets/empty_state_widget.dart';
+import '../../../../shared/widgets/loading_button.dart';
 import '../../../../shared/widgets/shimmer_box.dart';
 import '../../../../shared/widgets/pressable_card.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
@@ -17,15 +19,16 @@ import '../../../nutrition/data/services/nutrition_photo_api_service.dart';
 import '../../../nutrition/presentation/widgets/nutrition_detail_sheet.dart';
 import '../../../nutrition/presentation/widgets/nutrition_log_confirmation_sheet.dart';
 import '../../../profile/data/services/profile_preferences_store.dart';
+import '../../../../core/theme/app_colors.dart';
 
-// ─── Brand colors ─────────────────────────────────────────────────────────────
-const _kBrand = Color(0xFF143C3A);
-const _kBrandLight = Color(0xFFE7EFEA);
-const _kAmber = Color(0xFFF59E0B);
-const _kAmberLight = Color(0xFFFEF3C7);
-const _kGreen = Color(0xFF2E7D52);
-const _kGreenLight = Color(0xFFD6EEE6);
-const _kGrey = Color(0xFFD8D1C4);
+// ─── Brand colors (aliased to AppColors design tokens) ────────────────────────
+const _kBrand = AppColors.primary;
+const _kBrandLight = AppColors.brandLight;
+const _kAmber = AppColors.warningAmber;
+const _kAmberLight = AppColors.warningBg;
+const _kGreen = AppColors.accent;
+const _kGreenLight = AppColors.primaryLight;
+const _kGrey = AppColors.neutral;
 
 // ─── Meal type helpers ─────────────────────────────────────────────────────────
 IconData _mealIcon(String label) {
@@ -44,13 +47,13 @@ IconData _mealIcon(String label) {
 Color _mealColor(String label) {
   switch (label.toLowerCase()) {
     case 'desayuno':
-      return const Color(0xFFFFF3E0);
+      return AppColors.warningPeach;
     case 'almuerzo':
-      return const Color(0xFFE8F5E9);
+      return AppColors.accentLight;
     case 'cena':
-      return const Color(0xFFE8EAF6);
+      return AppColors.infoSoft;
     default:
-      return const Color(0xFFFCE4EC);
+      return AppColors.errorPale;
   }
 }
 
@@ -326,10 +329,10 @@ class _NutritionPageState extends State<NutritionPage>
                           child: Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8F5EF),
+                              color: AppColors.surfaceCream,
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: const Color(0xFFE7DFD2),
+                                color: AppColors.surfaceClay,
                               ),
                             ),
                             child: Row(
@@ -375,7 +378,7 @@ class _NutritionPageState extends State<NutritionPage>
                                         const SizedBox(height: 8),
                                         _SmallPill(
                                           label: option['macros'].toString(),
-                                          color: const Color(0xFFE7EFEA),
+                                          color: AppColors.brandLight,
                                           textColor: _kBrand,
                                         ),
                                       ],
@@ -441,6 +444,7 @@ class _NutritionPageState extends State<NutritionPage>
     final notesController = TextEditingController();
     double adherence = 85;
     String mealLabel = _mealLabel;
+    bool isSubmittingSheet = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -565,9 +569,11 @@ class _NutritionPageState extends State<NutritionPage>
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: FilledButton(
+                            child: LoadingButton(
+                              label: 'Guardar',
+                              isLoading: isSubmittingSheet,
                               onPressed: () async {
-                                Navigator.of(context).pop();
+                                setSheetState(() => isSubmittingSheet = true);
                                 final extra = [
                                   if (nameController.text.trim().isNotEmpty)
                                     nameController.text.trim(),
@@ -591,8 +597,10 @@ class _NutritionPageState extends State<NutritionPage>
                                       1,
                                   notes: extra,
                                 );
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
                               },
-                              child: const Text('Guardar'),
                             ),
                           ),
                         ],
@@ -876,9 +884,9 @@ class _NutritionPageState extends State<NutritionPage>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF6F7FB),
+                            color: AppColors.infoPale,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFD8DDEA)),
+                            border: Border.all(color: AppColors.infoBorder),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1230,7 +1238,7 @@ class _NutritionPageState extends State<NutritionPage>
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF7F1E7),
+                      color: AppColors.surfaceWarm,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -1294,8 +1302,8 @@ class _NutritionPageState extends State<NutritionPage>
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: logEntry != null
-                          ? const Color(0xFFDFF0E6)
-                          : const Color(0xFFF5F0E6),
+                          ? AppColors.accentBg
+                          : AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: logEntry != null
@@ -1497,12 +1505,14 @@ class _NutritionPageState extends State<NutritionPage>
           ),
           const SizedBox(height: 12),
           if (meals.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Sin comidas para este día.',
-                style: TextStyle(color: Colors.black45),
-              ),
+            EmptyStateWidget(
+              icon: Icons.restaurant_rounded,
+              title: 'Sin registros hoy',
+              subtitle:
+                  'Registra tus comidas para hacer seguimiento de tu nutrición.',
+              actionLabel: 'Registrar comida',
+              onAction: _openManualRegistration,
+              compact: true,
             )
           else
             _MealTimeline(
@@ -1647,7 +1657,7 @@ class _TodaySummaryCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1A4A47), Color(0xFF0F2E2C)],
+          colors: [AppColors.primaryMid, AppColors.primaryDark],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1808,17 +1818,17 @@ class _TodaySummaryCard extends StatelessWidget {
   }
 
   static Color _progressColor(double rawProgress) {
-    if (rawProgress < 0.9) return const Color(0xFF4CAF50);
-    if (rawProgress <= 1.05) return const Color(0xFFF59E0B);
-    return const Color(0xFFEF5350);
+    if (rawProgress < 0.9) return AppColors.accentSuccess;
+    if (rawProgress <= 1.05) return AppColors.warningAmber;
+    return AppColors.error;
   }
 
   static Color _macroFocusColor(String label) {
     final normalized = label.toLowerCase();
-    if (normalized.contains('prote')) return const Color(0xFF2D7FF9);
-    if (normalized.contains('carb')) return const Color(0xFFF59E0B);
+    if (normalized.contains('prote')) return AppColors.accentBlue;
+    if (normalized.contains('carb')) return AppColors.warningAmber;
     if (normalized.contains('gras') || normalized.contains('saciedad')) {
-      return const Color(0xFF2E7D52);
+      return AppColors.accent;
     }
     return Colors.white.withValues(alpha: 0.16);
   }
@@ -1956,9 +1966,9 @@ class _CoachSwapTipCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF6DB),
+        color: AppColors.warningPale,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3E1A6)),
+        border: Border.all(color: AppColors.warningBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1967,7 +1977,7 @@ class _CoachSwapTipCard extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFFFCE9A8),
+              color: AppColors.warningChip,
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.lightbulb_rounded, color: _kAmber),
@@ -2014,7 +2024,7 @@ class _CoachSwapTipCard extends StatelessWidget {
                           foregroundColor: _kBrand,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(999),
-                            side: const BorderSide(color: Color(0xFFE8DDC2)),
+                            side: const BorderSide(color: AppColors.warningBorder),
                           ),
                         ),
                         child: const Text('Ver opciones'),
@@ -2056,7 +2066,7 @@ class _RegisterCard extends StatelessWidget {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: const Color(0xFFF7F1E7),
+      color: AppColors.surfaceWarm,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -2214,7 +2224,7 @@ class _MealTimelineCard extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                     side: BorderSide(
-                      color: logged ? const Color(0xFF9DC7AD) : _kGrey,
+                      color: logged ? AppColors.accentSubtle : _kGrey,
                     ),
                   ),
                   child: Padding(
@@ -2286,7 +2296,7 @@ class _MealTimelineCard extends StatelessWidget {
                                     color: logged
                                         ? _kGreenLight
                                         : isPast
-                                        ? const Color(0xFFFFE8E8)
+                                        ? AppColors.errorLight
                                         : _kAmberLight,
                                   ),
                                   if (kcal != null &&
@@ -2329,12 +2339,12 @@ class _HistorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (history.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          'Sin registros recientes.',
-          style: TextStyle(color: Colors.black45),
-        ),
+      return const EmptyStateWidget(
+        icon: Icons.restaurant_rounded,
+        title: 'Sin registros hoy',
+        subtitle:
+            'Registra tus comidas para hacer seguimiento de tu nutrición.',
+        compact: true,
       );
     }
 
@@ -2484,7 +2494,7 @@ class _HistoryEntryCard extends StatelessWidget {
                                 ? _kGreenLight
                                 : adherence >= 50
                                 ? _kAmberLight
-                                : const Color(0xFFFFE8E8),
+                                : AppColors.errorLight,
                             textColor: adherenceColor,
                           ),
                           if (protein != null)
@@ -2619,7 +2629,7 @@ class _MacroRow extends StatelessWidget {
           emoji: '🔥',
           value: '$kcal',
           unit: 'kcal',
-          color: const Color(0xFFFFEDCC),
+          color: AppColors.warningWarm,
         ),
       );
     }
@@ -2629,7 +2639,7 @@ class _MacroRow extends StatelessWidget {
           emoji: '🥩',
           value: '$protein',
           unit: 'g prot',
-          color: const Color(0xFFDCEEDC),
+          color: AppColors.macroProtein,
         ),
       );
     }
@@ -2639,7 +2649,7 @@ class _MacroRow extends StatelessWidget {
           emoji: '🌾',
           value: '$carbs',
           unit: 'g carb',
-          color: const Color(0xFFE8E4F4),
+          color: AppColors.purpleLight,
         ),
       );
     }
@@ -2649,7 +2659,7 @@ class _MacroRow extends StatelessWidget {
           emoji: '🫙',
           value: '$fat',
           unit: 'g gras',
-          color: const Color(0xFFFFF3E0),
+          color: AppColors.warningPeach,
         ),
       );
     }
@@ -2939,9 +2949,9 @@ class _ShoppingListCTA extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFE7EFEA),
+          color: AppColors.brandLight,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFB6D6C8)),
+          border: Border.all(color: AppColors.accentDivider),
         ),
         child: Row(
           children: [

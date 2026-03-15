@@ -16,7 +16,8 @@ class WorkoutSessionScreen extends StatefulWidget {
   State<WorkoutSessionScreen> createState() => _WorkoutSessionScreenState();
 }
 
-class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
+class _WorkoutSessionScreenState extends State<WorkoutSessionScreen>
+    with WidgetsBindingObserver {
   late final List<_GuidedStep> _steps;
   int _stepIndex = 0;
   int _remainingSeconds = 0;
@@ -29,6 +30,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _steps = _buildSteps();
     _remainingSeconds = _steps.isNotEmpty ? _steps.first.suggestedSeconds : 0;
     for (final block in _blocks) {
@@ -40,9 +42,49 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _sessionNotesController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pauseTimer();
+    }
+    // No auto-resume on AppLifecycleState.resumed — user taps the play button
+  }
+
+  void _pauseTimer() {
+    if (_isRunning) {
+      _timer?.cancel();
+      setState(() => _isRunning = false);
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_completedBlocks.isNotEmpty) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('¿Salir de la sesión?'),
+          content: const Text('Perderás el progreso no guardado.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Salir sin guardar'),
+            ),
+          ],
+        ),
+      );
+      return ok ?? false;
+    }
+    return true;
   }
 
   List<Map<String, dynamic>> get _blocks =>
@@ -121,8 +163,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
   void _toggleTimer() {
     if (_isRunning) {
-      _timer?.cancel();
-      setState(() => _isRunning = false);
+      _pauseTimer();
       return;
     }
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
@@ -268,8 +309,18 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   @override
   Widget build(BuildContext context) {
     final progress = _steps.isEmpty ? 0.0 : (_stepIndex + 1) / _steps.length;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sesión guiada')),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        final canLeave = await _onWillPop();
+        if (canLeave && mounted) {
+          nav.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Sesión guiada')),
       body: Stack(
         children: [
           ListView(
@@ -403,6 +454,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               ),
             ),
         ],
+      ),
       ),
     );
   }

@@ -19,6 +19,7 @@ import '../../../profile/domain/models/profile_preferences.dart';
 import '../../../progress/data/services/body_metric_api_service.dart';
 import '../../../progress/data/services/progress_api_service.dart';
 import '../../../workout/data/services/workout_log_api_service.dart';
+import '../../../../core/theme/app_colors.dart';
 
 class _NutritionRouteOption {
   const _NutritionRouteOption({
@@ -855,7 +856,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           .map(
                             (option) => _HintPill(
                               label: option,
-                              color: const Color(0xFFE8EFE8),
+                              color: AppColors.brandLightAlt,
                               onTap: () {
                                 focusController.text = option;
                                 setModalState(() {});
@@ -1054,15 +1055,15 @@ class _DashboardPageState extends State<DashboardPage> {
                       children: const [
                         _HintPill(
                           label: 'Casi igual al plan',
-                          color: Color(0xFFDCEBE4),
+                          color: AppColors.primarySelected,
                         ),
                         _HintPill(
                           label: 'Cambios razonables',
-                          color: Color(0xFFFFE7BE),
+                          color: AppColors.warningAmberChip,
                         ),
                         _HintPill(
                           label: 'Fuera o social',
-                          color: Color(0xFFE8E4F4),
+                          color: AppColors.purpleLight,
                         ),
                       ],
                     ),
@@ -1336,16 +1337,16 @@ class _DashboardPageState extends State<DashboardPage> {
                     borderRadius: BorderRadius.circular(36),
                     gradient: const LinearGradient(
                       colors: [
-                        Color(0xFF173836),
-                        Color(0xFF2F6E67),
-                        Color(0xFFCF9B57),
+                        AppColors.primaryDeep,
+                        AppColors.primarySubtle,
+                        AppColors.warningGoldDark,
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF143C3A).withValues(alpha: 0.18),
+                        color: AppColors.primary.withValues(alpha: 0.18),
                         blurRadius: 28,
                         offset: const Offset(0, 16),
                       ),
@@ -1416,7 +1417,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           _HeaderActionChip(
                             icon: Icons.auto_awesome_rounded,
                             label: 'Mi Plan',
-                            color: const Color(0xFF2A6A65),
+                            color: AppColors.primaryTeal,
                             onTap: () => Navigator.of(
                               context,
                             ).pushNamed('/plan-generation'),
@@ -1425,14 +1426,14 @@ class _DashboardPageState extends State<DashboardPage> {
                           _HeaderActionChip(
                             icon: Icons.chat_bubble_outline_rounded,
                             label: 'Reportar',
-                            color: const Color(0xFFD97706),
+                            color: AppColors.warningGold,
                             onTap: () => _showReportToCoachSheet(context),
                           ),
                           const SizedBox(width: 8),
                           _HeaderActionChip(
                             icon: Icons.tune_rounded,
                             label: 'Ajustes',
-                            color: const Color(0xFF7C3AED),
+                            color: AppColors.purple,
                             onTap: () =>
                                 Navigator.of(context).pushNamed('/profile'),
                           ),
@@ -1532,7 +1533,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     data?.summary,
                     preferences,
                   ),
-                  color: const Color(0xFFE8EFE8),
+                  color: AppColors.brandLightAlt,
                   actionLabel: _dailyFocusActionLabel(todayStatus),
                   onAction: data == null
                       ? null
@@ -1699,7 +1700,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   description:
                       data?.summary['workout_focus']?.toString() ??
                       'Construiremos el foco despues del onboarding.',
-                  color: const Color(0xFFDDEBE5),
+                  color: AppColors.primaryBg,
                   actionLabel: 'Ver',
                   onAction: data == null
                       ? null
@@ -1712,7 +1713,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       data?.plan['nutrition_summary']?.toString() ??
                       data?.summary['nutrition_focus']?.toString() ??
                       'Agregaremos lineamientos nutricionales despues del onboarding.',
-                  color: const Color(0xFFF0E5D2),
+                  color: AppColors.surfaceClay,
                   chips:
                       ((data?.plan['macro_focus'] as List<dynamic>?) ??
                               const <dynamic>[])
@@ -1729,7 +1730,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   description: recentWorkout == null
                       ? 'Aun no registras sesiones desde tu cuenta.'
                       : '${recentWorkout['focus'] ?? 'Sesion'} · ${recentWorkout['session_minutes'] ?? '--'} min · ${_dateOnly(recentWorkout['completed_at'])}',
-                  color: const Color(0xFFDCECE4),
+                  color: AppColors.primaryXLight,
                   actionLabel: recentWorkout == null ? null : 'Editar',
                   onAction: recentWorkout == null
                       ? null
@@ -1741,7 +1742,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   description: recentNutrition == null
                       ? 'Todavia no registras adherencia nutricional.'
                       : '${recentNutrition['meal_label'] ?? 'Registro'} · ${recentNutrition['adherence_score'] ?? '--'}% · ${_dateOnly(recentNutrition['logged_at'])}',
-                  color: const Color(0xFFF0E5D2),
+                  color: AppColors.surfaceClay,
                   actionLabel: recentNutrition == null ? null : 'Editar',
                   onAction: recentNutrition == null
                       ? null
@@ -1753,7 +1754,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   description: recentMetric == null
                       ? 'No hay metricas recientes cargadas todavia.'
                       : '${recentMetric['weight_kg'] ?? '--'} kg · ${_dateOnly(recentMetric['recorded_at'])}',
-                  color: const Color(0xFFE6DFEC),
+                  color: AppColors.purplePale,
                   actionLabel: recentMetric == null ? null : 'Editar',
                   trailing: _WeightTrendIndicator(
                     weightTrend: progress?['weight_trend']?.toString(),
@@ -1767,7 +1768,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   title: 'Contexto del sistema',
                   description:
                       '${data?.plan['habits_summary']?.toString() ?? data?.summary['adherence_message']?.toString() ?? 'Tu adherencia se mostrara aqui.'} ${_priorityPrompt(preferences.dailyPriority, preferences.proactiveAdjustments)}',
-                  color: const Color(0xFFE6DFEC),
+                  color: AppColors.purplePale,
                 ),
               ],
             ),
@@ -1916,7 +1917,7 @@ class _BottomSheetFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFFF7F2E8),
+        color: AppColors.surfaceMuted,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: SafeArea(child: child),
@@ -1946,11 +1947,11 @@ class _RouteSheetHeader extends StatelessWidget {
           width: 52,
           height: 52,
           decoration: BoxDecoration(
-            color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+            color: AppColors.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(18),
           ),
           alignment: Alignment.center,
-          child: Icon(icon, color: const Color(0xFF143C3A)),
+          child: Icon(icon, color: AppColors.primary),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -1970,7 +1971,7 @@ class _RouteSheetHeader extends StatelessWidget {
             icon: const Icon(Icons.close_rounded),
             style: IconButton.styleFrom(
               backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF143C3A),
+              foregroundColor: AppColors.primary,
             ),
           ),
         ],
@@ -1990,7 +1991,7 @@ class _SectionTitleMini extends StatelessWidget {
       label,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
         fontWeight: FontWeight.w800,
-        color: const Color(0xFF143C3A),
+        color: AppColors.primary,
       ),
     );
   }
@@ -2020,10 +2021,10 @@ class _ChoicePill extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF143C3A) : Colors.white,
+          color: selected ? AppColors.primary : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? const Color(0xFF143C3A) : const Color(0xFFD9DDD8),
+            color: selected ? AppColors.primary : AppColors.neutralLine,
           ),
         ),
         child: Row(
@@ -2033,7 +2034,7 @@ class _ChoicePill extends StatelessWidget {
               selected
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_off_rounded,
-              color: selected ? Colors.white : const Color(0xFF143C3A),
+              color: selected ? Colors.white : AppColors.primary,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -2043,7 +2044,7 @@ class _ChoicePill extends StatelessWidget {
                   Text(
                     label,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: selected ? Colors.white : const Color(0xFF143C3A),
+                      color: selected ? Colors.white : AppColors.primary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -2084,16 +2085,16 @@ class _CompactChoicePill extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF143C3A) : Colors.white,
+          color: selected ? AppColors.primary : Colors.white,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? const Color(0xFF143C3A) : const Color(0xFFD9DDD8),
+            color: selected ? AppColors.primary : AppColors.neutralLine,
           ),
         ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: selected ? Colors.white : const Color(0xFF143C3A),
+            color: selected ? Colors.white : AppColors.primary,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -2121,7 +2122,7 @@ class _MetricPreviewCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE0E5DE)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2129,7 +2130,7 @@ class _MetricPreviewCard extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: const Color(0xFF143C3A),
+              color: AppColors.primary,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -2165,7 +2166,7 @@ class _HintPill extends StatelessWidget {
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF143C3A),
+            color: AppColors.primary,
           ),
         ),
       ),
@@ -2185,7 +2186,7 @@ class _HintPillRow extends StatelessWidget {
       runSpacing: 8,
       children: labels
           .map(
-            (label) => _HintPill(label: label, color: const Color(0xFFE8EFE8)),
+            (label) => _HintPill(label: label, color: AppColors.brandLightAlt),
           )
           .toList(),
     );
@@ -2215,12 +2216,12 @@ class _PrimaryActionCard extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFFF6E8D4), Color(0xFFE2EFE7)],
+          colors: [AppColors.gradientWarmStart, AppColors.gradientWarmEnd],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: const Color(0xFFD8DED7)),
+        border: Border.all(color: AppColors.cardBorderMuted),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2228,7 +2229,7 @@ class _PrimaryActionCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF143C3A),
+              color: AppColors.primary,
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
@@ -2263,11 +2264,11 @@ class _PrimaryActionCard extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+                  color: AppColors.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 alignment: Alignment.center,
-                child: Icon(icon, color: const Color(0xFF143C3A)),
+                child: Icon(icon, color: AppColors.primary),
               ),
             ],
           ),
@@ -2298,12 +2299,12 @@ class _PulseTile extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Colors.white, Color(0xFFF2EEE7)],
+          colors: [Colors.white, AppColors.surfaceCard],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFDAE2DC)),
+        border: Border.all(color: AppColors.cardBorderWarm),
       ),
       child: Column(
         children: [
@@ -2311,7 +2312,7 @@ class _PulseTile extends StatelessWidget {
             value,
             style: Theme.of(
               context,
-            ).textTheme.titleLarge?.copyWith(color: const Color(0xFF143C3A)),
+            ).textTheme.titleLarge?.copyWith(color: AppColors.primary),
           ),
           const SizedBox(height: 6),
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
@@ -2339,14 +2340,14 @@ class _QuickActionChip extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: const BoxDecoration(
-          color: Color(0xFF143C3A),
+          color: AppColors.primary,
           shape: BoxShape.circle,
         ),
         child: Icon(icon, size: 16, color: Colors.white),
       ),
       label: Text(label),
       backgroundColor: Colors.white,
-      side: const BorderSide(color: Color(0xFFD6DDD7)),
+      side: const BorderSide(color: AppColors.neutralBorder),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       onPressed: onTap,
     );
@@ -2390,20 +2391,20 @@ class _TodayStepCard extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: complete
-                  ? const [Color(0xFFDCEBE4), Color(0xFFF4F0E8)]
-                  : const [Colors.white, Color(0xFFF8F3EA)],
+                  ? const [AppColors.primarySelected, AppColors.surfaceCard]
+                  : const [Colors.white, AppColors.surfaceCard],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
               color: complete
-                  ? const Color(0xFF8FB9A7)
-                  : const Color(0xFFD8DCD5),
+                  ? AppColors.accentSubtle
+                  : AppColors.neutralBorder,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF143C3A).withValues(alpha: 0.06),
+                color: AppColors.primary.withValues(alpha: 0.06),
                 blurRadius: 18,
                 offset: const Offset(0, 10),
               ),
@@ -2416,14 +2417,14 @@ class _TodayStepCard extends StatelessWidget {
                 height: 48,
                 decoration: BoxDecoration(
                   color: complete
-                      ? const Color(0xFF2A6A65)
-                      : const Color(0xFF143C3A).withValues(alpha: 0.08),
+                      ? AppColors.primaryTeal
+                      : AppColors.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 alignment: Alignment.center,
                 child: Icon(
                   complete ? Icons.check_rounded : icon,
-                  color: complete ? Colors.white : const Color(0xFF143C3A),
+                  color: complete ? Colors.white : AppColors.primary,
                 ),
               ),
               const SizedBox(width: 14),
@@ -2437,14 +2438,14 @@ class _TodayStepCard extends StatelessWidget {
                         vertical: 5,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF143C3A).withValues(alpha: 0.08),
+                        color: AppColors.primary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
                         stepLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF143C3A),
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
@@ -2469,8 +2470,8 @@ class _TodayStepCard extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: complete
-                          ? const Color(0xFF2A6A65).withValues(alpha: 0.12)
-                          : const Color(0xFF143C3A).withValues(alpha: 0.06),
+                          ? AppColors.primaryTeal.withValues(alpha: 0.12)
+                          : AppColors.primary.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -2478,8 +2479,8 @@ class _TodayStepCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: complete
-                            ? const Color(0xFF2A6A65)
-                            : const Color(0xFF143C3A),
+                            ? AppColors.primaryTeal
+                            : AppColors.primary,
                       ),
                     ),
                   ),
@@ -2512,7 +2513,7 @@ class _ChecklistCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE0E5DE)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Column(
         children: [
@@ -2526,8 +2527,8 @@ class _ChecklistCard extends StatelessWidget {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     color: item.complete
-                        ? const Color(0xFF2A6A65)
-                        : const Color(0xFF6B7A79),
+                        ? AppColors.primaryTeal
+                        : AppColors.textMuted,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -2576,7 +2577,7 @@ class _DayProgressCard extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF173836), Color(0xFF2C6A64)],
+          colors: [AppColors.primaryDeep, AppColors.primaryTeal],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -2610,7 +2611,7 @@ class _DayProgressCard extends StatelessWidget {
               value: completion,
               minHeight: 12,
               backgroundColor: Colors.white.withValues(alpha: 0.18),
-              color: const Color(0xFFF2C685),
+              color: AppColors.warningGoldDark,
             ),
           ),
           const SizedBox(height: 10),
@@ -2647,7 +2648,7 @@ class _FeatureStrip extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF143C3A).withValues(alpha: 0.05),
+            color: AppColors.primary.withValues(alpha: 0.05),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -2700,7 +2701,7 @@ class _InteractiveFeatureStrip extends StatelessWidget {
             border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF143C3A).withValues(alpha: 0.05),
+                color: AppColors.primary.withValues(alpha: 0.05),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -2723,7 +2724,7 @@ class _InteractiveFeatureStrip extends StatelessWidget {
                   if (onAction != null)
                     const Icon(
                       Icons.chevron_right_rounded,
-                      color: Color(0xFF143C3A),
+                      color: AppColors.primary,
                     ),
                 ],
               ),
@@ -2750,7 +2751,7 @@ class _InteractiveFeatureStrip extends StatelessWidget {
                             style: Theme.of(context).textTheme.labelMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF143C3A),
+                                  color: AppColors.primary,
                                 ),
                           ),
                         ),
@@ -2769,15 +2770,15 @@ class _InteractiveFeatureStrip extends StatelessWidget {
 Color _macroFocusChipColor(String label) {
   final value = label.toLowerCase();
   if (value.contains('prote')) {
-    return const Color(0xFFDCE9FF);
+    return AppColors.infoPale;
   }
   if (value.contains('carb')) {
-    return const Color(0xFFFFE7BE);
+    return AppColors.warningAmberChip;
   }
   if (value.contains('gras') || value.contains('saciedad')) {
-    return const Color(0xFFDCEEDC);
+    return AppColors.macroProtein;
   }
-  return const Color(0xFFE8E4F4);
+  return AppColors.purpleLight;
 }
 
 String _suggestedWorkoutFocus(String style) {
@@ -2915,10 +2916,10 @@ class _AdherenceMetricsRow extends StatelessWidget {
     final workoutCompletionRate = (progress?['workout_completion_rate'] as num?)?.toInt() ?? 0;
 
     final adherenceColor = weeklyAdherence >= 80
-        ? const Color(0xFF2E7D52)
+        ? AppColors.accent
         : weeklyAdherence >= 50
-        ? const Color(0xFFF59E0B)
-        : const Color(0xFFEF5350);
+        ? AppColors.warningAmber
+        : AppColors.error;
 
     return Row(
       children: [
@@ -2971,7 +2972,7 @@ class _AdherenceMetricsRow extends StatelessWidget {
                 const Icon(
                   Icons.fitness_center,
                   size: 24,
-                  color: Color(0xFF143C3A),
+                  color: AppColors.primary,
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -2979,7 +2980,7 @@ class _AdherenceMetricsRow extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF143C3A),
+                    color: AppColors.primary,
                   ),
                 ),
                 const Text(
@@ -3003,7 +3004,7 @@ class _AdherenceMetricsRow extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF143C3A),
+                    color: AppColors.primary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -3015,7 +3016,7 @@ class _AdherenceMetricsRow extends StatelessWidget {
                     minHeight: 5,
                     backgroundColor: Colors.black12,
                     valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF143C3A),
+                      AppColors.primary,
                     ),
                   ),
                 ),
@@ -3046,7 +3047,7 @@ class _MetricChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE0E5DE)),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: child,
     );
@@ -3090,10 +3091,10 @@ class _StreakBadgeState extends State<_StreakBadge> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFFF6B35).withValues(alpha: 0.18),
+          color: AppColors.warningOrange.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: const Color(0xFFFF6B35).withValues(alpha: 0.4),
+            color: AppColors.warningOrange.withValues(alpha: 0.4),
           ),
         ),
         child: Column(
@@ -3184,7 +3185,7 @@ class _InsightsPanelState extends State<_InsightsPanel> {
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    border: Border.all(color: const Color(0xFFE8EFE8)),
+                    border: Border.all(color: AppColors.brandLightAlt),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -3193,12 +3194,12 @@ class _InsightsPanelState extends State<_InsightsPanel> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE7F4EE),
+                          color: AppColors.accentChip,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(
                           Icons.lightbulb_outline,
-                          color: Color(0xFF2E7D52),
+                          color: AppColors.accent,
                           size: 20,
                         ),
                       ),
@@ -3267,7 +3268,7 @@ class _InsightsPanelState extends State<_InsightsPanel> {
                 height: 6,
                 decoration: BoxDecoration(
                   color: _currentPage == index
-                      ? const Color(0xFF143C3A)
+                      ? AppColors.primary
                       : Colors.black12,
                   borderRadius: BorderRadius.circular(3),
                 ),
@@ -3312,7 +3313,7 @@ class _WeightTrendIndicator extends StatelessWidget {
       );
     }
 
-    final color = isUp ? const Color(0xFFEF5350) : const Color(0xFF2E7D52);
+    final color = isUp ? AppColors.error : AppColors.accent;
     final icon = isUp ? Icons.trending_up : Icons.trending_down;
 
     return Column(

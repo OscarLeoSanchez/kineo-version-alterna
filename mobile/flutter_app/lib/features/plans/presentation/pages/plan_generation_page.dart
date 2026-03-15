@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/config/app_config.dart';
@@ -70,6 +72,9 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
 
+  StreamSubscription<PlanGenerationEvent>? _subscription;
+  Timer? _timeoutTimer;
+
   @override
   void initState() {
     super.initState();
@@ -85,16 +90,57 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
 
   @override
   void dispose() {
+    _subscription?.cancel();
+    _timeoutTimer?.cancel();
     _pulseController.dispose();
     _stateNotifier.dispose();
     super.dispose();
   }
 
+  bool get _isGenerating {
+    final s = _stateNotifier.value;
+    return !s.isDone && s.error == null;
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_isGenerating) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('¿Cancelar generación?'),
+          content: const Text('El plan no se guardará si sales ahora.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Continuar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Salir'),
+            ),
+          ],
+        ),
+      );
+      if (ok ?? false) {
+        _subscription?.cancel();
+        _timeoutTimer?.cancel();
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _startGeneration() async {
+    // Cancel any previous subscription/timer
+    _subscription?.cancel();
+    _timeoutTimer?.cancel();
+
     // Reset state
     _stateNotifier.value = const _PlanGenState();
 
     final session = await AuthSessionStore().load();
+    if (!mounted) return;
     if (session == null) {
       _stateNotifier.value = _stateNotifier.value.copyWith(
         error: 'No hay sesion activa. Inicia sesion e intenta de nuevo.',
@@ -107,60 +153,92 @@ class _PlanGenerationPageState extends State<PlanGenerationPage>
       accessToken: session.accessToken,
     );
 
-    await for (final event in service.streamGeneration()) {
-      if (!mounted) return;
-      final current = _stateNotifier.value;
-
-      if (event is PlanGenerationProgress) {
-        // Mark the previous current step as done and add the new one
-        final updatedSteps = current.steps.map((s) {
-          if (!s.done) return s.copyWith(done: true);
-          return s;
-        }).toList();
-        updatedSteps.add(_Step(label: event.label, done: false));
-
-        _stateNotifier.value = current.copyWith(
-          steps: updatedSteps,
-          progress: event.pct.toDouble(),
-        );
-      } else if (event is PlanGenerationDone) {
-        final updatedSteps =
-            current.steps.map((s) => s.copyWith(done: true)).toList();
-        _stateNotifier.value = current.copyWith(
-          steps: updatedSteps,
-          progress: 100,
-          isDone: true,
-          plan: event.plan,
+    _timeoutTimer = Timer(const Duration(seconds: 120), () {
+      if (mounted && _isGenerating) {
+        _stateNotifier.value = _stateNotifier.value.copyWith(
+          error: 'La generación está tardando demasiado. Intenta de nuevo.',
         );
         _pulseController.stop();
-      } else if (event is PlanGenerationError) {
-        _stateNotifier.value = current.copyWith(error: event.message);
-        _pulseController.stop();
+        _subscription?.cancel();
       }
-    }
+    });
+
+    _subscription = service.streamGeneration().listen(
+      (event) {
+        if (!mounted) return;
+        final current = _stateNotifier.value;
+
+        if (event is PlanGenerationProgress) {
+          final updatedSteps = current.steps.map((s) {
+            if (!s.done) return s.copyWith(done: true);
+            return s;
+          }).toList();
+          updatedSteps.add(_Step(label: event.label, done: false));
+
+          _stateNotifier.value = current.copyWith(
+            steps: updatedSteps,
+            progress: event.pct.toDouble(),
+          );
+        } else if (event is PlanGenerationDone) {
+          _timeoutTimer?.cancel();
+          final updatedSteps =
+              current.steps.map((s) => s.copyWith(done: true)).toList();
+          _stateNotifier.value = current.copyWith(
+            steps: updatedSteps,
+            progress: 100,
+            isDone: true,
+            plan: event.plan,
+          );
+          _pulseController.stop();
+        } else if (event is PlanGenerationError) {
+          _timeoutTimer?.cancel();
+          _stateNotifier.value = current.copyWith(error: event.message);
+          _pulseController.stop();
+        }
+      },
+      onError: (Object e) {
+        if (!mounted) return;
+        _timeoutTimer?.cancel();
+        _stateNotifier.value = _stateNotifier.value.copyWith(
+          error: e.toString(),
+        );
+        _pulseController.stop();
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Generando tu plan'),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ValueListenableBuilder<_PlanGenState>(
-          valueListenable: _stateNotifier,
-          builder: (context, state, _) {
-            if (state.error != null) {
-              return _buildErrorState(context, state.error!);
-            }
-            if (state.isDone) {
-              return _buildDoneState(context, state);
-            }
-            return _buildProgressState(context, state);
-          },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        final canLeave = await _onWillPop();
+        if (canLeave && mounted) {
+          nav.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Generando tu plan'),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ValueListenableBuilder<_PlanGenState>(
+            valueListenable: _stateNotifier,
+            builder: (context, state, _) {
+              if (state.error != null) {
+                return _buildErrorState(context, state.error!);
+              }
+              if (state.isDone) {
+                return _buildDoneState(context, state);
+              }
+              return _buildProgressState(context, state);
+            },
+          ),
         ),
       ),
     );

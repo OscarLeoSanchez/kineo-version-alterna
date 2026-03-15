@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_surface_card.dart';
+import '../../../../shared/widgets/empty_state_widget.dart';
+import '../../../../shared/widgets/loading_button.dart';
 import '../../../../shared/widgets/series_bar_chart.dart';
 import '../../data/services/body_metric_api_service.dart';
 import '../../data/services/progress_api_service.dart';
@@ -687,11 +689,10 @@ class _ProgressPageState extends State<ProgressPage> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton(
+                    child: LoadingButton(
+                      label: 'Guardar check-in',
+                      isLoading: _isSubmitting,
                       onPressed: _isSubmitting ? null : _submitMetric,
-                      child: Text(
-                        _isSubmitting ? 'Guardando...' : 'Guardar check-in',
-                      ),
                     ),
                   ),
                 ],
@@ -738,7 +739,13 @@ class _ProgressPageState extends State<ProgressPage> {
             ...(bodyMetrics.isEmpty
                 ? [
                     const AppSurfaceCard(
-                      child: Text('Todavia no has guardado metricas corporales.'),
+                      child: EmptyStateWidget(
+                        icon: Icons.show_chart_rounded,
+                        title: 'Sin datos de progreso',
+                        subtitle:
+                            'Registra tu peso y métricas para ver tu evolución aquí.',
+                        compact: true,
+                      ),
                     ),
                   ]
                 : bodyMetrics.take(4).map((entry) {

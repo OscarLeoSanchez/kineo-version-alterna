@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_bottom_sheet.dart';
 
 class WorkoutDetailSheet extends StatelessWidget {
@@ -64,13 +65,13 @@ class WorkoutDetailSheet extends StatelessWidget {
                 _InfoChip(
                   label: muscleGroup,
                   icon: Icons.fitness_center_rounded,
-                  color: const Color(0xFFDCEEDC),
+                  color: AppColors.macroProtein,
                 ),
               if (location != null)
                 _InfoChip(
                   label: location,
                   icon: Icons.place_rounded,
-                  color: const Color(0xFFE8E4F4),
+                  color: AppColors.purpleLight,
                 ),
             ],
           ),
@@ -101,12 +102,12 @@ class WorkoutDetailSheet extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? const Color(0xFFE8F4EE)
-                      : const Color(0xFFF6F1E8),
+                      ? AppColors.accentLight
+                      : AppColors.surfaceCard,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: isSelected
-                        ? const Color(0xFF2E7D52)
+                        ? AppColors.accent
                         : Colors.transparent,
                   ),
                 ),
@@ -135,7 +136,7 @@ class WorkoutDetailSheet extends StatelessWidget {
                     if (isSelected)
                       const Icon(
                         Icons.check_circle_rounded,
-                        color: Color(0xFF2E7D52),
+                        color: AppColors.accent,
                       ),
                   ],
                 ),
@@ -159,7 +160,7 @@ class WorkoutDetailSheet extends StatelessWidget {
               return FilterChip(
                 label: Text(name),
                 selected: isSelected,
-                selectedColor: const Color(0xFFD6EEE6),
+                selectedColor: AppColors.primaryLight,
                 onSelected: (_) => _showReplacementDialog(context, item),
               );
             }).toList(),
@@ -331,7 +332,7 @@ class _MetricChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1ECE3),
+        color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),

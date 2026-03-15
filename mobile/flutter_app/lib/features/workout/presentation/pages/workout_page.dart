@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../activity/data/services/activity_history_api_service.dart';
 import '../../../nutrition/data/services/nutrition_api_service.dart';
 import '../../../plans/data/services/plan_api_service.dart';
@@ -10,12 +11,14 @@ import '../../../../core/services/session_data_cache.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_surface_card.dart';
 import '../../../../shared/widgets/activity_record_detail_sheet.dart';
+import '../../../../shared/widgets/empty_state_widget.dart';
+import '../../../../shared/widgets/loading_button.dart';
 import '../../../../shared/widgets/pressable_card.dart';
 import '../../../../shared/widgets/shimmer_box.dart';
 import '../../data/services/workout_api_service.dart';
 import '../../data/services/workout_block_api_service.dart';
 import '../../data/services/workout_log_api_service.dart';
-import '../screens/workout_session_screen.dart';
+import '../../../../core/router/app_router.dart';
 import '../widgets/workout_detail_sheet.dart';
 import '../widgets/workout_log_confirmation_sheet.dart';
 
@@ -302,10 +305,9 @@ class _WorkoutPageState extends State<WorkoutPage>
 
   Future<void> _openGuidedSession(Map<String, dynamic>? selectedDay) async {
     if (selectedDay == null) return;
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => WorkoutSessionScreen(workoutDay: selectedDay),
-      ),
+    final result = await Navigator.of(context).pushNamed<bool>(
+      AppRouter.workoutSession,
+      arguments: selectedDay,
     );
     if (result == true) {
       await _refreshSilently();
@@ -359,7 +361,7 @@ class _WorkoutPageState extends State<WorkoutPage>
                           (value) => ChoiceChip(
                             label: Text(value),
                             selected: energyLevel == value,
-                            selectedColor: const Color(0xFFD6EEE6),
+                            selectedColor: AppColors.primaryLight,
                             onSelected: (_) {
                               setModalState(() {
                                 energyLevel = value;
@@ -675,8 +677,8 @@ class _WorkoutPageState extends State<WorkoutPage>
                     child: PressableCard(
                       borderRadius: 20,
                       color: isSelected
-                          ? const Color(0xFF143C3A)
-                          : const Color(0xFFF1ECE3),
+                          ? AppColors.primary
+                          : AppColors.surfaceAlt,
                       onTap: () => Navigator.of(context).pop(item),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -797,16 +799,16 @@ class _WorkoutPageState extends State<WorkoutPage>
         Row(
           children: [
             Expanded(
-              child: FilledButton.icon(
+              child: LoadingButton(
+                label: 'Cerrar sesión',
+                icon: Icons.check_circle_outline_rounded,
+                isLoading: _isSubmitting,
                 onPressed:
                     selectedDay == null ||
-                        _isSubmitting ||
                         selectedDay['is_today'] != true ||
                         (data?['completed_today'] == true)
                     ? null
                     : () => _registerWorkout(selectedDay),
-                icon: const Icon(Icons.check_circle_outline_rounded),
-                label: Text(_isSubmitting ? 'Guardando...' : 'Cerrar sesión'),
               ),
             ),
             const SizedBox(width: 12),
@@ -884,7 +886,7 @@ class _WorkoutPageState extends State<WorkoutPage>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
         gradient: const LinearGradient(
-          colors: [Color(0xFF143C3A), Color(0xFF2B6A66)],
+          colors: [AppColors.primary, AppColors.primaryAlt],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -998,7 +1000,7 @@ class _WorkoutPageState extends State<WorkoutPage>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF1A4A47), Color(0xFF0F2E2C)],
+                  colors: [AppColors.primaryMid, AppColors.primaryDark],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -1087,17 +1089,14 @@ class _WorkoutPageState extends State<WorkoutPage>
           ],
 
           if (blocks.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F0E6),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                selectedDay?['objective']?.toString() ??
-                    'Este dia no tiene bloques cargados.',
-              ),
+            EmptyStateWidget(
+              icon: Icons.fitness_center_rounded,
+              title: 'Sin entrenamiento hoy',
+              subtitle: selectedDay?['objective']?.toString() ??
+                  'No hay sesión programada. Genera un plan para empezar.',
+              actionLabel: 'Crear mi plan',
+              onAction: _refreshWorkoutPlan,
+              compact: true,
             ),
           ...List.generate(blocks.length, (index) {
             final block = blocks[index];
@@ -1106,7 +1105,7 @@ class _WorkoutPageState extends State<WorkoutPage>
                 bottom: index == blocks.length - 1 ? 0 : 12,
               ),
               child: PressableCard(
-                color: const Color(0xFFF5F0E6),
+                color: AppColors.surface,
                 borderRadius: 24,
                 onTap: () => _showBlockDetail(
                   block,
@@ -1122,7 +1121,7 @@ class _WorkoutPageState extends State<WorkoutPage>
                     children: [
                       CircleAvatar(
                         radius: 18,
-                        backgroundColor: const Color(0xFF143C3A),
+                        backgroundColor: AppColors.primary,
                         child: Text(
                           '${index + 1}',
                           style: const TextStyle(color: Colors.white),
@@ -1155,7 +1154,7 @@ class _WorkoutPageState extends State<WorkoutPage>
                                   ),
                                   decoration: BoxDecoration(
                                     color: block['completed'] == true
-                                        ? const Color(0xFFD6EEE6)
+                                        ? AppColors.primaryLight
                                         : Colors.white,
                                     borderRadius: BorderRadius.circular(999),
                                   ),
@@ -1279,7 +1278,7 @@ class _WorkoutPageState extends State<WorkoutPage>
         ),
         const SizedBox(height: 12),
         AppSurfaceCard(
-          backgroundColor: const Color(0xFFE8EFE8),
+          backgroundColor: AppColors.brandLightAlt,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1356,12 +1355,12 @@ class _WorkoutPageState extends State<WorkoutPage>
                       },
                 borderRadius: 20,
                 color: isSelected
-                    ? const Color(0xFF143C3A)
+                    ? AppColors.primary
                     : (!isAvailable
-                          ? const Color(0xFFE9E2D6)
+                          ? AppColors.surfaceClay
                           : (goalHit
-                                ? const Color(0xFFD6EEE6)
-                                : const Color(0xFFF1ECE3))),
+                                ? AppColors.primaryLight
+                                : AppColors.surfaceAlt)),
                 child: Container(
                   width: 94,
                   margin: const EdgeInsets.only(right: 10),
@@ -1435,7 +1434,7 @@ class _WorkoutPageState extends State<WorkoutPage>
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFD8D1C4)),
+                        border: Border.all(color: AppColors.neutral),
                       ),
                       child: Row(
                         children: [
@@ -1658,8 +1657,8 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
                   child: PressableCard(
                     borderRadius: 20,
                     color: isDone
-                        ? const Color(0xFFD6EEE6)
-                        : const Color(0xFFF5F0E6),
+                        ? AppColors.primaryLight
+                        : AppColors.surface,
                     onTap: () {
                       setState(() {
                         _completedBlocks[index] = !_completedBlocks[index];
@@ -1674,8 +1673,8 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
                                 ? Icons.check_circle_rounded
                                 : Icons.radio_button_unchecked_rounded,
                             color: isDone
-                                ? const Color(0xFF2E7D52)
-                                : const Color(0xFF8A7F73),
+                                ? AppColors.accent
+                                : AppColors.neutralLight,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -1714,7 +1713,7 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
                     (label) => ChoiceChip(
                       label: Text(label),
                       selected: _energyLevel == _mapEnergyLabel(label),
-                      selectedColor: const Color(0xFFD6EEE6),
+                      selectedColor: AppColors.primaryLight,
                       onSelected: (_) {
                         setState(() {
                           _energyLevel = _mapEnergyLabel(label);
@@ -1756,10 +1755,10 @@ class _WorkoutRegistrationPageState extends State<_WorkoutRegistrationPage> {
                       label: Text(label),
                       selected: _technique == label,
                       selectedColor: label == 'Muy bien'
-                          ? const Color(0xFFD6EEE6)
+                          ? AppColors.primaryLight
                           : label == 'Bien'
-                          ? const Color(0xFFFFF3CD)
-                          : const Color(0xFFFFE0E0),
+                          ? AppColors.warningLight
+                          : AppColors.errorPale,
                       onSelected: (_) {
                         setState(() {
                           _technique = label;
@@ -1909,7 +1908,7 @@ class _DayPlanDetailSheet extends StatelessWidget {
                   (block) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppSurfaceCard(
-                      backgroundColor: const Color(0xFFF5F0E6),
+                      backgroundColor: AppColors.surface,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1942,7 +1941,7 @@ class _DayPlanDetailSheet extends StatelessWidget {
                   (meal) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppSurfaceCard(
-                      backgroundColor: const Color(0xFFE9E2D6),
+                      backgroundColor: AppColors.surfaceClay,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1990,7 +1989,7 @@ class _DayChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1ECE3),
+        color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label),

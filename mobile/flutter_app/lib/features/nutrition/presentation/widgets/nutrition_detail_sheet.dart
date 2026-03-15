@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
+
 class NutritionDetailSheet extends StatelessWidget {
   /// The meal data map from the nutrition API response.
   /// Legacy keys: title, meal, macros, objective, detail, components (List),
@@ -115,7 +117,7 @@ class NutritionDetailSheet extends StatelessWidget {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFDCF0E4),
+                              color: AppColors.accentMid,
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Row(
@@ -172,7 +174,7 @@ class NutritionDetailSheet extends StatelessWidget {
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFE7F4EE),
+                                color: AppColors.accentChip,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Column(
@@ -185,7 +187,7 @@ class NutritionDetailSheet extends StatelessWidget {
                                   // T-14 — Macros vs. target
                                   if (calorieTarget != null && calorieTarget! > 0) ...[
                                     const SizedBox(height: 10),
-                                    const Divider(height: 1, color: Color(0xFFB8DCC8)),
+                                    const Divider(height: 1, color: AppColors.accentDivider),
                                     const SizedBox(height: 10),
                                     if (proteinG != null) ...[
                                       _MacroVsTargetRow(
@@ -251,35 +253,35 @@ class NutritionDetailSheet extends StatelessWidget {
                               emoji: '🔥',
                               value: '$caloriesKcal',
                               unit: 'kcal',
-                              color: const Color(0xFFFFEDCC),
+                              color: AppColors.warningWarm,
                             ),
                           if (proteinG != null)
                             _EmojiMacroChip(
                               emoji: '🥩',
                               value: '$proteinG',
                               unit: 'g prot',
-                              color: const Color(0xFFDCEEDC),
+                              color: AppColors.macroProtein,
                             ),
                           if (carbsG != null)
                             _EmojiMacroChip(
                               emoji: '🌾',
                               value: '$carbsG',
                               unit: 'g carb',
-                              color: const Color(0xFFE8E4F4),
+                              color: AppColors.purpleLight,
                             ),
                           if (fatG != null)
                             _EmojiMacroChip(
                               emoji: '🫙',
                               value: '$fatG',
                               unit: 'g gras',
-                              color: const Color(0xFFFFF3E0),
+                              color: AppColors.warningPeach,
                             ),
                           if (fiberG != null)
                             _EmojiMacroChip(
                               emoji: '🌿',
                               value: '$fiberG',
                               unit: 'g fibra',
-                              color: const Color(0xFFE3F2FD),
+                              color: AppColors.macroFat,
                             ),
                         ],
                       ),
@@ -301,7 +303,7 @@ class NutritionDetailSheet extends StatelessWidget {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE7F4EE),
+                          color: AppColors.accentChip,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(objective),
@@ -324,7 +326,7 @@ class NutritionDetailSheet extends StatelessWidget {
                                 child: Icon(
                                   Icons.circle,
                                   size: 6,
-                                  color: Color(0xFF143C3A),
+                                  color: AppColors.primary,
                                 ),
                               ),
                               Expanded(child: Text(ingredient)),
@@ -360,7 +362,7 @@ class NutritionDetailSheet extends StatelessWidget {
                                 height: 26,
                                 margin: const EdgeInsets.only(right: 10, top: 1),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF143C3A),
+                                  color: AppColors.primary,
                                   borderRadius: BorderRadius.circular(13),
                                 ),
                                 child: Center(
@@ -398,7 +400,7 @@ class NutritionDetailSheet extends StatelessWidget {
                             .map(
                               (a) => Chip(
                                 label: Text(a),
-                                backgroundColor: const Color(0xFFFFE8E8),
+                                backgroundColor: AppColors.errorLight,
                               ),
                             )
                             .toList(),
@@ -530,7 +532,7 @@ class _BadgeChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1ECE3),
+        color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

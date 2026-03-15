@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
 import '../../features/auth/presentation/pages/auth_page.dart';
 import '../../features/dashboard/presentation/pages/home_shell.dart';
 import '../../features/history/presentation/pages/history_page.dart';
@@ -11,6 +12,7 @@ import '../../features/progress/presentation/pages/progress_page.dart';
 import '../../features/settings/presentation/pages/goals_settings_page.dart';
 import '../../features/subscription/presentation/pages/subscription_page.dart';
 import '../../features/workout/presentation/screens/workout_mode_screen.dart';
+import '../../features/workout/presentation/screens/workout_session_screen.dart';
 
 class AppRouter {
   static const String auth = '/auth';
@@ -22,6 +24,7 @@ class AppRouter {
   static const String profile = '/profile';
   static const String controlCenter = '/control-center';
   static const String workoutMode = '/workout-mode';
+  static const String workoutSession = '/workout-session';
   static const String progress = '/progress';
   static const String shoppingList = '/shopping-list';
 
@@ -46,6 +49,8 @@ class AppRouter {
       case progress:
         return _buildAnimatedRoute(settings);
       case shoppingList:
+        return _buildAnimatedRoute(settings);
+      case workoutSession:
         return _buildAnimatedRoute(settings);
       case dashboard:
       default:
@@ -97,7 +102,7 @@ class AppRouter {
                     child: DecoratedBox(
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Color(0xFFF5E8D7), Color(0xFFE0ECE6)],
+                          colors: [AppColors.gradientSurfaceStart, AppColors.gradientSurfaceEnd],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -144,6 +149,9 @@ class AppRouter {
         final meals =
             settings?.arguments as List<dynamic>? ?? const <dynamic>[];
         return ShoppingListPage(weeklyMeals: meals);
+      case workoutSession:
+        final day = settings?.arguments as Map<String, dynamic>? ?? const {};
+        return WorkoutSessionScreen(workoutDay: day);
       case dashboard:
       default:
         return const HomeShellPage();
